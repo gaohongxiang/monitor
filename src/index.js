@@ -11,7 +11,7 @@ class TwitterMonitorApp {
         this.isRunning = false;
         this.startTime = null;
         this.httpServer = null;
-        
+
         // 使用UTC时间
         process.env.TZ = 'UTC';
     }
@@ -54,7 +54,7 @@ class TwitterMonitorApp {
             // 检查每个凭证的认证状态
             for (const credential of allCredentials) {
                 const refreshToken = await databaseManager.getRefreshToken(credential.xUserName);
-                
+
                 if (refreshToken) {
                     result.authenticatedCount++;
                 } else {
@@ -120,7 +120,7 @@ class TwitterMonitorApp {
                 console.warn('💡 建议运行以下命令完成认证:');
                 console.warn('   - 认证所有凭证: npm run auth');
                 console.warn('   - 检查认证状态: npm run auth:check');
-                
+
                 // 显示未认证的凭证详情
                 if (authCheckResult.unauthenticatedCredentials.length > 0) {
                     console.warn('📋 未认证的凭证:');
@@ -128,7 +128,7 @@ class TwitterMonitorApp {
                         console.warn(`   - ${cred.id} (${cred.monitorUser})`);
                     });
                 }
-                
+
                 // 在生产环境中，如果没有任何认证凭证则停止启动
                 if (authCheckResult.authenticatedCount === 0) {
                     console.error('❌ 系统启动失败：没有任何已认证的API凭证');
@@ -141,23 +141,26 @@ class TwitterMonitorApp {
 
             // 4. 初始化调度监控
             console.log('⏰ 初始化调度监控系统...');
-            
+
             // 从配置文件读取监控设置
             const settings = config.monitorSettings || {};
             const testMode = settings.testMode || false;
             const startTime = settings.startTime || "09:00";
             const endTime = settings.endTime || "00:00";
             const testIntervalMinutes = settings.testIntervalMinutes || 2;
-            
+
             if (testMode) {
                 // 获取当前UTC时间用于显示
                 const utcTime = this.getCurrentUTCTime();
                 const utcTimeStr = utcTime.toISOString();
                 console.log(`🧪 测试模式启用 - 从当前UTC时间 ${utcTimeStr} 开始，每${testIntervalMinutes}分钟监控一次`);
             } else {
-                console.log(`⏰ 监控时间: ${startTime} - ${endTime === "00:00" ? '24:00' : endTime} (UTC时间)`);
+                const startTimeUTC8 = settings.startTimeUTC8 || "09:00";
+                const endTimeUTC8 = settings.endTimeUTC8 || "23:00";
+                console.log(`⏰ 监控时间: ${startTimeUTC8} - ${endTimeUTC8} (北京时间UTC+8)`);
+                console.log(`   转换为UTC: ${startTime} - ${endTime === "00:00" ? '24:00' : endTime}`);
             }
-            
+
             const initSuccess = twitterMonitor.initializeScheduledMonitoring();
             if (!initSuccess) {
                 throw new Error('调度监控系统初始化失败');
@@ -173,7 +176,7 @@ class TwitterMonitorApp {
 
             this.isRunning = true;
             console.log('🎉 Twitter多用户监控系统启动成功！');
-            
+
             // 显示系统状态
             await this.showSystemStatus();
 
@@ -197,7 +200,7 @@ class TwitterMonitorApp {
      */
     startHealthCheckServer() {
         const port = process.env.PORT || 3000;
-        
+
         this.httpServer = http.createServer(async (req, res) => {
             // 设置CORS头
             res.setHeader('Access-Control-Allow-Origin', '*');
@@ -210,14 +213,14 @@ class TwitterMonitorApp {
                 try {
                     const healthStatus = await this.getHealthStatus();
                     const statusCode = healthStatus.status === 'healthy' ? 200 : 503;
-                    
+
                     res.writeHead(statusCode);
                     res.end(JSON.stringify(healthStatus, null, 2));
                 } catch (error) {
                     res.writeHead(500);
                     res.end(JSON.stringify({ error: error.message }, null, 2));
                 }
-                
+
             } else if (req.method === 'GET' && req.url === '/status') {
                 // 详细状态端点
                 try {
@@ -225,7 +228,7 @@ class TwitterMonitorApp {
                     const authStatus = await twitterMonitor.getAuthenticationStatus();
                     const storageStats = twitterMonitor.getStorageStats();
                     const todayStats = twitterMonitor.getTodayStats();
-                    
+
                     const detailedStatus = {
                         system: {
                             isRunning: this.isRunning,
@@ -238,19 +241,19 @@ class TwitterMonitorApp {
                         todayStats: todayStats,
                         timestamp: new Date().toISOString()
                     };
-                    
+
                     res.writeHead(200);
                     res.end(JSON.stringify(detailedStatus, null, 2));
-                    
+
                 } catch (error) {
                     res.writeHead(500);
                     res.end(JSON.stringify({ error: error.message }, null, 2));
                 }
-                
+
             } else {
                 // 404 - 未找到
                 res.writeHead(404);
-                res.end(JSON.stringify({ 
+                res.end(JSON.stringify({
                     error: 'Not Found',
                     availableEndpoints: ['/health', '/status']
                 }, null, 2));
@@ -286,7 +289,7 @@ class TwitterMonitorApp {
             const scheduleStatus = twitterMonitor.scheduleManager?.getScheduleStatus();
             if (scheduleStatus) {
                 console.log(`调度任务: ${scheduleStatus.isRunning ? '✅ 运行中' : '❌ 已停止'}`);
-                
+
                 // 显示每个用户的调度信息
                 Object.entries(scheduleStatus.users).forEach(([nickname, userInfo]) => {
                     console.log(`  - ${nickname}: ${userInfo.taskCount} 个时间点`);
@@ -326,7 +329,7 @@ class TwitterMonitorApp {
                 const utcTime = this.getCurrentUTCTime();
                 console.log(`\n⏰ 定期状态报告 - ${utcTime.toISOString()}`);
                 await this.showSystemStatus();
-                
+
                 // 显示今日统计
                 const todayStats = twitterMonitor.getTodayStats();
                 if (todayStats.totalTweets > 0) {
@@ -353,32 +356,32 @@ class TwitterMonitorApp {
     setupGracefulShutdown() {
         const shutdown = async (signal) => {
             console.log(`\n🛑 收到 ${signal} 信号，开始优雅关闭...`);
-            
+
             try {
                 this.isRunning = false;
-                
+
                 // 停止HTTP服务器
                 if (this.httpServer) {
                     console.log('🌐 关闭HTTP服务器...');
                     this.httpServer.close();
                 }
-                
+
                 // 停止监控
                 console.log('⏹️  停止监控任务...');
                 twitterMonitor.stopScheduledMonitoring();
-                
+
                 // 保存数据
                 console.log('💾 保存数据...');
                 twitterMonitor.saveDataToFile();
-                
+
                 // 显示运行统计
                 const runTime = Date.now() - this.startTime.getTime();
                 const runTimeFormatted = this.formatDuration(runTime);
                 console.log(`📊 系统运行时间: ${runTimeFormatted}`);
-                
+
                 console.log('✅ 系统已优雅关闭');
                 process.exit(0);
-                
+
             } catch (error) {
                 console.error('❌ 关闭过程中出错:', error.message);
                 process.exit(1);
@@ -388,11 +391,11 @@ class TwitterMonitorApp {
         // 监听关闭信号
         process.on('SIGINT', () => shutdown('SIGINT'));
         process.on('SIGTERM', () => shutdown('SIGTERM'));
-        
+
         // 监听未捕获的异常
         process.on('uncaughtException', (error) => {
             console.error('❌ 未捕获的异常:', error);
-            
+
             // 如果是数据库连接错误，不退出程序，让重连机制处理
             if (error.message && (
                 error.message.includes('Connection terminated') ||
@@ -402,15 +405,15 @@ class TwitterMonitorApp {
                 console.log('🔄 数据库连接错误，等待重连机制处理...');
                 return;
             }
-            
+
             // 其他严重错误才退出程序
             console.error('🛑 严重错误，开始优雅关闭...');
             shutdown('uncaughtException');
         });
-        
+
         process.on('unhandledRejection', (reason, promise) => {
             console.error('❌ 未处理的Promise拒绝:', reason);
-            
+
             // 如果是数据库连接错误，不退出程序
             if (reason && reason.message && (
                 reason.message.includes('Connection terminated') ||
@@ -420,7 +423,7 @@ class TwitterMonitorApp {
                 console.log('🔄 数据库连接Promise拒绝，等待重连机制处理...');
                 return;
             }
-            
+
             // 其他严重错误才退出程序
             console.error('🛑 严重Promise拒绝，开始优雅关闭...');
             shutdown('unhandledRejection');
@@ -458,7 +461,7 @@ class TwitterMonitorApp {
             const monitorStatus = twitterMonitor.getMonitorStatus();
             const authStatus = await twitterMonitor.getAuthenticationStatus();
             const storageStats = twitterMonitor.getStorageStats();
-            
+
             return {
                 status: this.isRunning && monitorStatus.isMonitoring ? 'healthy' : 'unhealthy',
                 uptime: this.startTime ? Date.now() - this.startTime.getTime() : 0,

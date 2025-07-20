@@ -98,13 +98,43 @@ export class ConfigManager {
     }
 
     /**
+     * 将UTC+8时间转换为UTC时间
+     * @param {string} timeStr - UTC+8时间字符串 (HH:MM格式)
+     * @returns {string} UTC时间字符串 (HH:MM格式)
+     */
+    convertUTC8ToUTC(timeStr) {
+        if (!timeStr || !/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/.test(timeStr)) {
+            return timeStr; // 格式不正确，返回原值
+        }
+
+        const [hours, minutes] = timeStr.split(':').map(Number);
+        
+        // UTC+8转UTC需要减去8小时
+        let utcHours = hours - 8;
+        
+        // 处理跨日情况
+        if (utcHours < 0) {
+            utcHours += 24;
+        }
+        
+        return `${utcHours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+    }
+
+    /**
      * 获取监控设置
      * @returns {Object} 监控设置对象
      */
     getMonitorSettings() {
+        const startTimeUTC8 = process.env.MONITOR_START_TIME || "09:00";
+        const endTimeUTC8 = process.env.MONITOR_END_TIME || "23:00";
+        
         return {
-            startTime: process.env.MONITOR_START_TIME || "09:00",
-            endTime: process.env.MONITOR_END_TIME || "23:00",
+            // 用户输入的UTC+8时间
+            startTimeUTC8: startTimeUTC8,
+            endTimeUTC8: endTimeUTC8,
+            // 转换后的UTC时间（供内部使用）
+            startTime: this.convertUTC8ToUTC(startTimeUTC8),
+            endTime: this.convertUTC8ToUTC(endTimeUTC8),
             testMode: process.env.TEST_MODE === 'true',
             testIntervalMinutes: parseInt(process.env.TEST_INTERVAL || "1")
         };
