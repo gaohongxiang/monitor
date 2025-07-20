@@ -32,7 +32,7 @@ Twitter API V2免费版限制严格：
 
 **最终选择**：Railway
 - 30天/$5试用期，成本可控
-- 到期后可续费或想办法重新试用
+- 到期后可续费或想办法重新试用，数据库30天后也会删除。
 - 一键部署，开发体验好
 
 ### 数据存储架构演进
@@ -97,7 +97,8 @@ Twitter API V2免费版限制严格：
    - 复制 "Postgres Connection URL"
    - 格式类似：`postgresql://postgres:password@containers-us-west-xxx.railway.app:6543/railway`
 
-6. 数据库链接有两个：DATABASE_URL 和 DATABASE_PUBLIC_UR，本地开发环境配置到环境变量中数据库链接使用DATABASE_PUBLIC_UR的值。railway生产环境不必配置数据库链接，因为同一个项目中railway会自动识别使用DATABASE_URL的值。
+6. 数据库链接有两个：DATABASE_URL 和 DATABASE_PUBLIC_UR，本地开发环境配置到环境变量中数据库链接使用DATABASE_PUBLIC_UR的值。railway生产环境用 DATABASE_URL=${{ Postgres.DATABASE_URL }} 就可以。
+
 由于数据库里存的是同一个twitter用户的刷新令牌，所以开发环境和生产环境我用的同一个数据库。
 
 ### 创建钉钉机器人
