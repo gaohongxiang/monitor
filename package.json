@@ -1,0 +1,38 @@
+{
+  "name": "twitter-multi-user-monitor",
+  "version": "2.0.0",
+  "description": "Twitter多用户监控系统，支持多API凭证轮换、智能时间调度和钉钉通知",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "NODE_ENV=production node src/index.js",
+    "dev": "NODE_ENV=development TEST_MODE=true TEST_INTERVAL=1 node src/index.js",
+    "test": "node tests/test_system.js",
+    "verify": "node tests/verify_deployment.js",
+    "auth": "node tools/authenticate.js",
+    "auth:check": "node tools/authenticate.js check"
+  },
+  "keywords": [
+    "twitter",
+    "monitor",
+    "social-media",
+    "api",
+    "notification",
+    "dingtalk",
+    "postgresql"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "axios": "^1.10.0",
+    "dotenv": "^17.2.0",
+    "node-cron": "^4.2.1",
+    "pg": "^8.11.3",
+    "playwright": "^1.54.1",
+    "socks-proxy-agent": "^8.0.5",
+    "twitter-api-v2": "^1.24.0"
+  }
+}

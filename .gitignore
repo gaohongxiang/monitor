@@ -1,3 +1,6 @@
+# 数据目录 - 包含运行时生成的日志和推文数据
+data/
+
 # Logs
 logs
 *.log
@@ -137,3 +140,14 @@ dist
 # Vite logs files
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# ===== 项目特有的忽略规则 =====
+
+# 系统文件
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
