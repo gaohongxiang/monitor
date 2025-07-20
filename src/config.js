@@ -778,40 +778,7 @@ MONITOR_END_TIME=23:00
         return 'local';
     }
 
-    /**
-     * 获取环境特定的监控设置
-     * @returns {Object} 监控设置对象
-     */
-    getMonitorSettings() {
-        const nodeEnv = process.env.NODE_ENV || 'development';
-        const baseSettings = {
-            startTime: process.env.MONITOR_START_TIME || "09:00",
-            endTime: process.env.MONITOR_END_TIME || "23:00",
-            testMode: process.env.TEST_MODE === 'true',
-            testIntervalMinutes: parseInt(process.env.TEST_INTERVAL || "1")
-        };
 
-        // 环境特定的设置调整
-        if (nodeEnv === 'production') {
-            return {
-                ...baseSettings,
-                // 生产环境默认禁用测试模式
-                testMode: process.env.TEST_MODE === 'true' ? true : false,
-                // 生产环境使用更长的间隔
-                testIntervalMinutes: Math.max(parseInt(process.env.TEST_INTERVAL || "5"), 5)
-            };
-        } else if (nodeEnv === 'test') {
-            return {
-                ...baseSettings,
-                // 测试环境强制启用测试模式
-                testMode: true,
-                // 测试环境使用更短的间隔
-                testIntervalMinutes: parseInt(process.env.TEST_INTERVAL || "1")
-            };
-        }
-
-        return baseSettings;
-    }
 
     /**
      * 检查环境配置的有效性
