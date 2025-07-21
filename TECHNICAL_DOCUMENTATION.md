@@ -101,17 +101,42 @@ graph TB
 DINGTALK_ACCESS_TOKEN=钉钉访问令牌
 DATABASE_URL=postgresql://用户:密码@主机:端口/数据库名
 
-# API凭证配置（JSON格式）
+# API凭证配置（JSON格式 - 嵌套结构）
+# 按监控用户分组，减少配置冗余，每个用户可以有多个API凭证
 API_CREDENTIALS='[
   {
-    "id": "cred_1",
     "monitorUser": "binancezh",
-    "clientId": "客户端ID",
-    "clientSecret": "客户端密钥",
-    "redirectUri": "重定向URI",
-    "username": "X用户名",
-    "browserId": "指纹浏览器ID",
-    "proxyUrl": "代理地址"
+    "credentials": [
+      {
+        "username": "X用户名1",
+        "clientId": "客户端ID1",
+        "clientSecret": "客户端密钥1",
+        "redirectUri": "重定向URI",
+        "browserId": "指纹浏览器ID1",
+        "proxyUrl": "代理地址1"
+      },
+      {
+        "username": "X用户名2",
+        "clientId": "客户端ID2",
+        "clientSecret": "客户端密钥2",
+        "redirectUri": "重定向URI",
+        "browserId": "指纹浏览器ID2",
+        "proxyUrl": "代理地址2"
+      }
+    ]
+  },
+  {
+    "monitorUser": "elonmusk",
+    "credentials": [
+      {
+        "username": "X用户名3",
+        "clientId": "客户端ID3",
+        "clientSecret": "客户端密钥3",
+        "redirectUri": "重定向URI",
+        "browserId": "指纹浏览器ID3",
+        "proxyUrl": "代理地址3"
+      }
+    ]
   }
 ]'
 
@@ -638,7 +663,21 @@ npm start            # 生产模式启动
 # .env文件示例
 DINGTALK_ACCESS_TOKEN=your_dingtalk_token
 DATABASE_URL=postgresql://user:pass@host:port/db
-API_CREDENTIALS='[{"id":"cred_1","monitorUser":"username",...}]'
+API_CREDENTIALS=[
+  {
+    "monitorUser": "binancezh",
+    "credentials": [
+      {
+        "username": "X用户名1",
+        "clientId": "客户端ID1",
+        "clientSecret": "客户端密钥1",
+        "redirectUri": "重定向URI",
+        "browserId": "指纹浏览器ID1",
+        "proxyUrl": "代理地址1"
+      }
+    ]
+  }
+]
 MONITOR_START_TIME=09:00  # 北京时间UTC+8
 MONITOR_END_TIME=23:00    # 北京时间UTC+8
 ```

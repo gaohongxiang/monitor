@@ -178,17 +178,29 @@ flowchart TD
 DINGTALK_ACCESS_TOKEN=钉钉访问令牌
 DATABASE_URL=postgresql://用户:密码@主机:端口/数据库名
 
-# API凭证配置（JSON格式）
+# API凭证配置（JSON格式 - 嵌套结构）
+# 按监控用户分组，减少配置冗余
 API_CREDENTIALS='[
   {
-    "id": "cred_1",
     "monitorUser": "binancezh",
-    "clientId": "客户端ID",
-    "clientSecret": "客户端密钥", 
-    "redirectUri": "重定向URI",
-    "username": "X用户名",
-    "browserId": "指纹浏览器ID",
-    "proxyUrl": "代理地址"
+    "credentials": [
+      {
+        "username": "X用户名",
+        "clientId": "客户端ID",
+        "clientSecret": "客户端密钥",
+        "redirectUri": "重定向URI",
+        "browserId": "指纹浏览器ID",
+        "proxyUrl": "代理地址"
+      },
+      {
+        "username": "第二个X用户名",
+        "clientId": "第二个客户端ID",
+        "clientSecret": "第二个客户端密钥",
+        "redirectUri": "重定向URI",
+        "browserId": "第二个指纹浏览器ID",
+        "proxyUrl": "第二个代理地址"
+      }
+    ]
   }
 ]'
 

@@ -18,6 +18,7 @@ export class xMonitorManager {
         this.dataDir = './data/monitor'; // 数据存储目录
         this.isMonitoring = false; // 监控状态
         this.monitorInterval = null; // 监控定时器
+        this.scheduleManager = scheduleManager; // 引用调度管理器
 
         // 初始化数据目录和加载历史数据
         this.initializeDataStorage();

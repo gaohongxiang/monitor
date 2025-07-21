@@ -34,8 +34,8 @@ export class ConfigManager {
     }
 
     /**
-     * 解析API凭证配置
-     * @returns {Array} API凭证列表
+     * 解析API凭证配置（嵌套结构）
+     * @returns {Array} API凭证列表（转换为内部格式）
      */
     parseApiCredentials() {
         const apiCredentialsJson = process.env.API_CREDENTIALS;
@@ -44,25 +44,104 @@ export class ConfigManager {
         }
 
         try {
-            const credentials = JSON.parse(apiCredentialsJson);
-            if (!Array.isArray(credentials)) {
+            const nestedConfig = JSON.parse(apiCredentialsJson);
+            if (!Array.isArray(nestedConfig)) {
                 throw new Error('API_CREDENTIALS必须是数组格式');
             }
 
-            // 验证每个凭证的必需字段
-            for (const cred of credentials) {
-                const requiredFields = ['id', 'monitorUser', 'clientId', 'clientSecret', 'redirectUri', 'username', 'browserId', 'proxyUrl'];
-                for (const field of requiredFields) {
-                    if (!cred[field]) {
-                        throw new Error(`API凭证缺少必需字段: ${field}`);
-                    }
-                }
-            }
+            // 验证嵌套结构格式
+            this.validateNestedStructure(nestedConfig);
 
-            return credentials;
+            // 转换嵌套结构为内部格式
+            return this.convertNestedToInternalFormat(nestedConfig);
+
         } catch (error) {
             throw new Error(`解析API_CREDENTIALS失败: ${error.message}`);
         }
+    }
+
+    /**
+     * 验证嵌套结构的完整性
+     * @param {Array} nestedConfig - 嵌套配置数组
+     */
+    validateNestedStructure(nestedConfig) {
+        if (nestedConfig.length === 0) {
+            throw new Error('API_CREDENTIALS不能为空数组');
+        }
+
+        nestedConfig.forEach((userConfig, userIndex) => {
+            // 验证用户级别的必需字段
+            if (!userConfig.monitorUser || typeof userConfig.monitorUser !== 'string') {
+                throw new Error(`用户配置[${userIndex}]缺少或格式错误的字段: monitorUser`);
+            }
+
+            if (!userConfig.credentials || !Array.isArray(userConfig.credentials)) {
+                throw new Error(`用户配置[${userIndex}]缺少或格式错误的字段: credentials`);
+            }
+
+            if (userConfig.credentials.length === 0) {
+                throw new Error(`用户配置[${userIndex}]的credentials数组不能为空`);
+            }
+
+            // 验证每个凭证的必需字段
+            const requiredCredentialFields = ['username', 'clientId', 'clientSecret', 'redirectUri', 'browserId', 'proxyUrl'];
+            
+            userConfig.credentials.forEach((credential, credIndex) => {
+                for (const field of requiredCredentialFields) {
+                    if (!credential[field] || typeof credential[field] !== 'string' || credential[field].trim() === '') {
+                        throw new Error(`用户配置[${userIndex}]的凭证[${credIndex}]缺少或格式错误的字段: ${field}`);
+                    }
+                }
+            });
+
+            // 检查同一用户下的username唯一性
+            const usernames = userConfig.credentials.map(cred => cred.username);
+            const uniqueUsernames = new Set(usernames);
+            if (usernames.length !== uniqueUsernames.size) {
+                throw new Error(`用户配置[${userIndex}]中存在重复的username`);
+            }
+        });
+
+        // 检查全局username唯一性
+        const allUsernames = [];
+        nestedConfig.forEach(userConfig => {
+            userConfig.credentials.forEach(credential => {
+                allUsernames.push(credential.username);
+            });
+        });
+
+        const uniqueAllUsernames = new Set(allUsernames);
+        if (allUsernames.length !== uniqueAllUsernames.size) {
+            throw new Error('存在重复的username，所有API凭证的username必须全局唯一');
+        }
+    }
+
+    /**
+     * 将嵌套结构转换为内部格式
+     * @param {Array} nestedConfig - 嵌套配置数组
+     * @returns {Array} 内部格式的凭证数组
+     */
+    convertNestedToInternalFormat(nestedConfig) {
+        const internalCredentials = [];
+
+        nestedConfig.forEach(userConfig => {
+            const monitorUser = userConfig.monitorUser;
+
+            userConfig.credentials.forEach(credential => {
+                internalCredentials.push({
+                    // 保持原有的内部字段名
+                    monitorUser: monitorUser,
+                    xClientId: credential.clientId,
+                    xClientSecret: credential.clientSecret,
+                    xRedirectUri: credential.redirectUri,
+                    xUserName: credential.username,
+                    bitbrowserId: credential.browserId,
+                    socksProxyUrl: credential.proxyUrl
+                });
+            });
+        });
+
+        return internalCredentials;
     }
 
     /**
@@ -84,13 +163,13 @@ export class ConfigManager {
             }
 
             userMap.get(monitorUser).apiCredentials.push({
-                id: cred.id,
-                xClientId: cred.clientId,
-                xClientSecret: cred.clientSecret,
-                xRedirectUri: cred.redirectUri,
-                xUserName: cred.username,
-                bitbrowserId: cred.browserId,
-                socksProxyUrl: cred.proxyUrl
+                id: cred.xUserName, // 使用username作为唯一标识
+                xClientId: cred.xClientId,
+                xClientSecret: cred.xClientSecret,
+                xRedirectUri: cred.xRedirectUri,
+                xUserName: cred.xUserName,
+                bitbrowserId: cred.bitbrowserId,
+                socksProxyUrl: cred.socksProxyUrl
             });
         }
 
@@ -349,8 +428,8 @@ export class ConfigManager {
     }
 
     /**
-     * 验证API凭证配置的详细格式
-     * @param {Array} credentials - API凭证列表
+     * 验证API凭证配置的详细格式（内部格式）
+     * @param {Array} credentials - 内部格式的API凭证列表
      * @returns {Object} 验证结果
      */
     validateApiCredentials(credentials) {
@@ -372,18 +451,18 @@ export class ConfigManager {
             return validationResult;
         }
 
+        // 验证内部格式的必需字段
         const requiredFields = [
-            { name: 'id', description: '凭证唯一标识符' },
             { name: 'monitorUser', description: '要监控的Twitter用户名' },
-            { name: 'clientId', description: 'Twitter API客户端ID' },
-            { name: 'clientSecret', description: 'Twitter API客户端密钥' },
-            { name: 'redirectUri', description: 'OAuth重定向URI' },
-            { name: 'username', description: 'X平台用户名' },
-            { name: 'browserId', description: '指纹浏览器ID' },
-            { name: 'proxyUrl', description: '代理服务器地址' }
+            { name: 'xClientId', description: 'Twitter API客户端ID' },
+            { name: 'xClientSecret', description: 'Twitter API客户端密钥' },
+            { name: 'xRedirectUri', description: 'OAuth重定向URI' },
+            { name: 'xUserName', description: 'X平台用户名' },
+            { name: 'bitbrowserId', description: '指纹浏览器ID' },
+            { name: 'socksProxyUrl', description: '代理服务器地址' }
         ];
 
-        const credentialIds = new Set();
+        const usernames = new Set();
         const monitorUsers = new Set();
 
         credentials.forEach((cred, index) => {
@@ -397,13 +476,13 @@ export class ConfigManager {
                 }
             }
 
-            // 检查ID唯一性
-            if (cred.id) {
-                if (credentialIds.has(cred.id)) {
+            // 检查username唯一性
+            if (cred.xUserName) {
+                if (usernames.has(cred.xUserName)) {
                     validationResult.isValid = false;
-                    validationResult.errors.push(`API凭证ID重复: ${cred.id}`);
+                    validationResult.errors.push(`API凭证username重复: ${cred.xUserName}`);
                 } else {
-                    credentialIds.add(cred.id);
+                    usernames.add(cred.xUserName);
                 }
             }
 
@@ -413,15 +492,15 @@ export class ConfigManager {
             }
 
             // 验证URL格式
-            if (cred.redirectUri && !this.isValidUrl(cred.redirectUri)) {
+            if (cred.xRedirectUri && !this.isValidUrl(cred.xRedirectUri)) {
                 validationResult.warnings.push(
-                    `API凭证[${index}]的redirectUri格式可能无效: ${cred.redirectUri}`
+                    `API凭证[${index}]的redirectUri格式可能无效: ${cred.xRedirectUri}`
                 );
             }
 
-            if (cred.proxyUrl && !this.isValidUrl(cred.proxyUrl)) {
+            if (cred.socksProxyUrl && !this.isValidUrl(cred.socksProxyUrl)) {
                 validationResult.warnings.push(
-                    `API凭证[${index}]的proxyUrl格式可能无效: ${cred.proxyUrl}`
+                    `API凭证[${index}]的proxyUrl格式可能无效: ${cred.socksProxyUrl}`
                 );
             }
         });
@@ -565,18 +644,29 @@ DINGTALK_ACCESS_TOKEN=your_dingtalk_access_token_here
 # 格式: postgresql://用户名:密码@主机:端口/数据库名
 DATABASE_URL=postgresql://username:password@localhost:5432/twitter_monitor
 
-# API凭证配置（JSON格式）
-# 注意：这是一个JSON数组，包含所有API凭证
+# API凭证配置（JSON格式 - 嵌套结构）
+# 按监控用户分组，减少配置冗余，每个用户可以有多个API凭证
 API_CREDENTIALS='[
   {
-    "id": "cred_1",
     "monitorUser": "要监控的Twitter用户名",
-    "clientId": "Twitter_API_客户端ID",
-    "clientSecret": "Twitter_API_客户端密钥",
-    "redirectUri": "OAuth重定向URI",
-    "username": "X平台用户名",
-    "browserId": "指纹浏览器ID",
-    "proxyUrl": "代理服务器地址"
+    "credentials": [
+      {
+        "username": "X平台用户名1",
+        "clientId": "Twitter_API_客户端ID_1",
+        "clientSecret": "Twitter_API_客户端密钥_1",
+        "redirectUri": "OAuth重定向URI",
+        "browserId": "指纹浏览器ID_1",
+        "proxyUrl": "代理服务器地址_1"
+      },
+      {
+        "username": "X平台用户名2",
+        "clientId": "Twitter_API_客户端ID_2",
+        "clientSecret": "Twitter_API_客户端密钥_2",
+        "redirectUri": "OAuth重定向URI",
+        "browserId": "指纹浏览器ID_2",
+        "proxyUrl": "代理服务器地址_2"
+      }
+    ]
   }
 ]'
 

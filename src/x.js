@@ -302,7 +302,7 @@ export class XClient {
                     id: tweet.id,
                     nickname,
                     text: fullText,
-                    createdAt: tweet.createdAt,
+                    createdAt: tweet.created_at, // Twitter API v2 使用 created_at 字段
                     url: `https://twitter.com/${username}/status/${tweet.id}`,
                     metrics: tweet.public_metrics
                 };

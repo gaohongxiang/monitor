@@ -289,7 +289,7 @@ class TwitterMonitorApp {
             // 调度状态
             const scheduleStatus = twitterMonitor.scheduleManager?.getScheduleStatus();
             if (scheduleStatus) {
-                console.log(`调度任务: ${scheduleStatus.isRunning ? '✅ 运行中' : '❌ 已停止'}`);
+                console.log(`⏰ 调度任务: ${scheduleStatus.isRunning ? '✅ 运行中' : '❌ 已停止'}`);
 
                 // 显示每个用户的调度信息和下次触发时间
                 Object.entries(scheduleStatus.users).forEach(([nickname, userInfo]) => {
@@ -299,7 +299,7 @@ class TwitterMonitorApp {
                     const nextExecution = twitterMonitor.scheduleManager?.getNextExecutionInfo(nickname);
                     if (nextExecution) {
                         const remainingTime = TimeUtils.formatRemainingTime(nextExecution.minutesUntil);
-                        console.log(`    下次触发: ${nextExecution.utc8Time} (UTC+8), 还有 ${remainingTime}`);
+                        console.log(`      ⏱️ 下次执行: ${nextExecution.utc8Time} (UTC+8), 倒计时: ${remainingTime}`);
                     }
                 });
             }

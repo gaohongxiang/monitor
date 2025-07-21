@@ -71,6 +71,21 @@
 3. WHEN 需要添加新的API凭证 THEN 开发者SHALL能够通过修改环境变量中的JSON配置来添加
 4. WHEN 系统初始化 THEN 系统SHALL验证所有必需的凭证字段都存在
 
+### Requirement 15 - 优化API凭证配置结构
+
+**User Story:** 作为开发者，我希望API凭证配置采用按监控用户分组的嵌套结构，这样可以减少配置冗余，提高配置的可读性和维护性。
+
+**背景:** 当前的平铺结构需要为每个API凭证重复写monitorUser等信息，造成配置冗余。新的嵌套结构按监控用户分组，每个用户下包含多个API凭证，配置更简洁清晰。
+
+#### Acceptance Criteria
+
+1. WHEN 配置API凭证 THEN 开发者SHALL能够使用按monitorUser分组的嵌套JSON结构
+2. WHEN 同一监控用户有多个API凭证 THEN 所有凭证SHALL在同一个用户对象的credentials数组中
+3. WHEN 系统解析配置 THEN 系统SHALL支持新的嵌套结构格式
+4. WHEN 配置验证 THEN 系统SHALL验证嵌套结构的完整性和正确性
+5. WHEN 多个API凭证轮换 THEN 系统SHALL按用户分组进行凭证轮换
+6. WHEN 配置错误 THEN 系统SHALL提供针对嵌套结构的详细错误信息
+
 ### Requirement 7 - 数据库持久化存储
 
 **User Story:** 作为开发者，我希望动态更新的数据（如refreshToken）存储在PostgreSQL数据库中，这样可以确保数据持久化和实时更新。

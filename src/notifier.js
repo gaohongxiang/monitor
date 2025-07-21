@@ -200,11 +200,22 @@ export class DingTalkNotifier {
      */
     formatTweetTime(createdAt) {
         try {
+            if (!createdAt) {
+                return '时间未知';
+            }
+            
             const date = new Date(createdAt);
+            
+            // 检查日期是否有效
+            if (isNaN(date.getTime())) {
+                return '时间格式错误';
+            }
+            
             // 使用UTC+8时间，用户友好
             return TimeUtils.toUTC8String(date);
-        } catch {
-            return createdAt;
+        } catch (error) {
+            console.warn('格式化推文时间失败:', error.message, '原始时间:', createdAt);
+            return createdAt || '时间未知';
         }
     }
 
