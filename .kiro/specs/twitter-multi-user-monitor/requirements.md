@@ -162,3 +162,21 @@
 6. WHEN 数据库连接错误 THEN 系统SHALL区分连接错误和其他严重错误
 7. WHEN 发生连接错误 THEN 系统SHALL记录详细的错误信息用于诊断
 8. WHEN 系统运行期间 THEN 系统SHALL采用按需重连而非定时保活机制
+
+### Requirement 14 - 时区显示优化和用户体验
+
+**User Story:** 作为中国用户，我希望系统显示的时间都是北京时间（UTC+8），这样更直观易懂，但系统内部计算仍使用UTC确保准确性。
+
+**背景:** 系统面向中国用户，但部署在国际云平台上。为确保时间计算的准确性，系统内部统一使用UTC时间进行所有计算和存储，但为了用户体验，所有面向用户的时间显示都转换为北京时间（UTC+8）。
+
+#### Acceptance Criteria
+
+1. WHEN 用户配置监控时间 THEN 用户SHALL能够直接输入北京时间（UTC+8）格式
+2. WHEN 系统显示触发时间 THEN 系统SHALL显示北京时间而不是UTC时间
+3. WHEN 发送钉钉通知 THEN 推文时间和推送时间SHALL显示北京时间
+4. WHEN 系统打印状态报告 THEN 系统SHALL显示距离下次触发还有多长时间
+5. WHEN 系统内部进行时间计算 THEN 系统SHALL使用UTC时间确保准确性
+6. WHEN 环境变量配置时间 THEN 用户SHALL能够在.env文件中直接输入北京时间（UTC+8）
+7. WHEN 配置MONITOR_START_TIME和MONITOR_END_TIME THEN 用户SHALL输入北京时间格式，系统自动转换为UTC
+8. WHEN 数据库存储时间 THEN 系统SHALL以UTC格式存储所有时间戳
+9. WHEN API调用涉及时间参数 THEN 系统SHALL使用UTC时间进行API调用

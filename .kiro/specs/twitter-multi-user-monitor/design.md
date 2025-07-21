@@ -127,9 +127,10 @@ flowchart TD
 #### 1. 调度管理器 (ScheduleManager)
 - **职责**: 管理所有用户的监控时间调度
 - **功能**: 
-  - 根据API凭证数量计算监控时间点
+  - 根据API凭证数量计算监控时间点（内部使用UTC）
   - 创建和管理定时任务
-  - 处理时区转换（北京时间）
+  - 处理时区转换（显示使用UTC+8）
+  - 提供下次触发倒计时功能
 
 #### 2. 监控管理器 (MonitorManager) - 基于现有monitor.js扩展
 - **职责**: 执行实际的推文监控任务
@@ -151,7 +152,15 @@ flowchart TD
 - **功能**:
   - 发送文本消息到钉钉群
   - 格式化消息内容
-  - 添加时间戳
+  - 添加UTC+8时间戳（用户友好）
+
+#### 5. 时间工具类 (TimeUtils) - 新增
+- **职责**: 统一处理UTC和UTC+8时间的转换和显示
+- **功能**:
+  - UTC时间转换为UTC+8显示
+  - 计算下次执行倒计时
+  - 格式化时间字符串
+  - 环境变量时间转换（UTC+8输入→UTC内部处理）
 
 #### 5. 预先认证工具 (AuthenticationTool) - 新增
 - **职责**: 预先完成API凭证的OAuth认证
@@ -188,7 +197,7 @@ NODE_ENV=production|development
 TEST_MODE=true|false
 TEST_INTERVAL=1
 
-# 监控时间配置
+# 监控时间配置（北京时间UTC+8格式）
 MONITOR_START_TIME=09:00
 MONITOR_END_TIME=23:00
 ```

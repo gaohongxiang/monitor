@@ -1,5 +1,6 @@
 import axios from 'axios';
 import 'dotenv/config';
+import { TimeUtils } from './timeUtils.js';
 
 /**
  * 钉钉通知管理器
@@ -24,9 +25,9 @@ export class DingTalkNotifier {
     async sendTextMessage(content, keyword = null, addTimestamp = true) {
         const finalKeyword = keyword || this.defaultKeyword;
         let finalContent = finalKeyword + '\n' + content;
-        
+
         if (addTimestamp) {
-            finalContent += '\n推送时间: ' + getCurrentTime();
+            finalContent += '\n推送时间: ' + TimeUtils.getCurrentUTC8TimeForMessage();
         }
 
         const message = {
@@ -65,38 +66,30 @@ export class DingTalkNotifier {
             throw new Error('推文列表不能为空');
         }
 
-        let content = '';
-        
-        if (tweets.length === 1) {
-            // 单条推文通知
-            const tweet = tweets[0];
-            const tweetText = this.truncateText(tweet.text, 200);
-            
-            content = `🐦 新推文监控\n\n` +
-                `用户: ${tweet.nickname}\n` +
-                `内容: ${tweetText}\n` +
-                `时间: ${this.formatTweetTime(tweet.createdAt)}\n` +
-                `链接: ${tweet.url}`;
-                
+        // 统一处理，不区分单条多条
+        let content = `🐦 新推文监控 (${tweets.length}条)\n\n`;
+
+        tweets.forEach((tweet, index) => {
+            // 不截断推文内容，显示完整文本
+            const tweetText = tweet.text || '';
+            const tweetTime = this.formatTweetTime(tweet.createdAt);
+
+            content += `${index + 1}. ${tweet.nickname}\n${tweetText}\n发推时间: ${tweetTime}\n原文链接: ${tweet.url}`;
+
+            // 如果有互动数据，显示出来
             if (tweet.metrics) {
                 content += `\n互动: 👍${tweet.metrics.like_count || 0} 🔄${tweet.metrics.retweet_count || 0}`;
             }
-        } else {
-            // 多条推文汇总通知
-            content = `🐦 新推文监控 (${tweets.length}条)\n\n`;
-            
-            tweets.forEach((tweet, index) => {
-                const tweetText = this.truncateText(tweet.text, 100);
-                content += `${index + 1}. ${tweet.nickname}\n${tweetText}\n${tweet.url}\n\n`;
-            });
-            
-            // 添加统计信息
-            const userStats = this.getTweetStats(tweets);
-            content += `📊 统计信息:\n`;
-            Object.entries(userStats).forEach(([user, count]) => {
-                content += `${user}: ${count}条  `;
-            });
-        }
+
+            content += '\n\n';
+        });
+
+        // 添加统计信息
+        const userStats = this.getTweetStats(tweets);
+        content += `📊 统计信息:\n`;
+        Object.entries(userStats).forEach(([user, count]) => {
+            content += `${user}: ${count}条  `;
+        });
 
         return await this.sendTextMessage(content);
     }
@@ -153,11 +146,11 @@ export class DingTalkNotifier {
      */
     async sendMessage(message) {
         let lastError = null;
-        
+
         for (let attempt = 1; attempt <= this.maxRetries; attempt++) {
             try {
                 const url = `${this.baseUrl}?access_token=${this.accessToken}`;
-                
+
                 const response = await axios.post(url, message, {
                     headers: { "Content-Type": "application/json;charset=utf-8" },
                     timeout: 10000
@@ -177,7 +170,7 @@ export class DingTalkNotifier {
             } catch (error) {
                 lastError = error;
                 console.warn(`钉钉通知发送失败 (尝试 ${attempt}/${this.maxRetries}):`, error.message);
-                
+
                 if (attempt < this.maxRetries) {
                     // 等待后重试
                     await new Promise(resolve => setTimeout(resolve, this.retryDelay * attempt));
@@ -208,8 +201,8 @@ export class DingTalkNotifier {
     formatTweetTime(createdAt) {
         try {
             const date = new Date(createdAt);
-            // 使用ISO格式的UTC时间
-            return date.toISOString();
+            // 使用UTC+8时间，用户友好
+            return TimeUtils.toUTC8String(date);
         } catch {
             return createdAt;
         }
@@ -239,7 +232,7 @@ export class DingTalkNotifier {
                 msgtype: "text",
                 text: { content: "钉钉通知连接测试 - " + getCurrentTime() }
             };
-            
+
             const result = await this.sendMessage(testMessage);
             return result.success;
         } catch (error) {

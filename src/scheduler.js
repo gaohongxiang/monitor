@@ -1,5 +1,6 @@
 import cron from 'node-cron';
 import { configManager } from './config.js';
+import { TimeUtils } from './timeUtils.js';
 
 /**
  * 时间调度管理器
@@ -163,9 +164,12 @@ export class ScheduleManager {
             const apiCredentialCount = userConfig.apiCredentials.length;
             const scheduleTimes = this.calculateScheduleTimes(apiCredentialCount);
 
-            console.log(`用户 ${nickname} 的调度时间点:`, scheduleTimes.map(t =>
-                `${t.hour.toString().padStart(2, '0')}:${t.minute.toString().padStart(2, '0')}`
-            ));
+            // 显示UTC+8时间点，用户友好
+            const utc8Times = scheduleTimes.map(t => {
+                const utcTime = `${t.hour.toString().padStart(2, '0')}:${t.minute.toString().padStart(2, '0')}`;
+                return TimeUtils.convertUTCTimesToUTC8([utcTime])[0];
+            });
+            console.log(`用户 ${nickname} 的调度时间点: [ ${utc8Times.map(t => `'${t}'`).join(', ')} ]`);
 
             // 清理该用户的旧任务
             this.stopUserSchedule(nickname);
@@ -188,11 +192,14 @@ export class ScheduleManager {
                 }
 
                 const task = cron.schedule(cronExpression, async () => {
-                    const timeStr = timePoint.second !== undefined
+                    const utcTimeStr = timePoint.second !== undefined
                         ? `${timePoint.hour}:${timePoint.minute.toString().padStart(2, '0')}:${timePoint.second.toString().padStart(2, '0')}`
                         : `${timePoint.hour}:${timePoint.minute.toString().padStart(2, '0')}`;
-                    const taskId = `${nickname}-${timePoint.credentialIndex}-${timeStr}`;
-                    console.log(`触发监控任务 [用户: ${nickname}, 时间: ${timeStr}, 凭证索引: ${timePoint.credentialIndex}]`);
+                    
+                    // 转换为UTC+8显示
+                    const utc8TimeStr = TimeUtils.convertUTCTimesToUTC8([utcTimeStr.substring(0, 5)])[0];
+                    const taskId = `${nickname}-${timePoint.credentialIndex}-${utcTimeStr}`;
+                    console.log(`触发监控任务 [用户: ${nickname}, 时间: ${utc8TimeStr}, 凭证索引: ${timePoint.credentialIndex}]`);
 
                     // 更新任务统计
                     this.updateTaskStats(taskId, 'started');
@@ -348,6 +355,20 @@ export class ScheduleManager {
         }
 
         return status;
+    }
+
+    /**
+     * 获取指定用户的下次执行信息
+     * @param {string} nickname - 用户昵称
+     * @returns {Object|null} 下次执行信息
+     */
+    getNextExecutionInfo(nickname) {
+        const userSchedule = this.userSchedules.get(nickname);
+        if (!userSchedule || !userSchedule.scheduleTimes) {
+            return null;
+        }
+
+        return TimeUtils.getNextExecutionInfo(userSchedule.scheduleTimes);
     }
 
     /**

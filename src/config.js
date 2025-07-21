@@ -108,15 +108,15 @@ export class ConfigManager {
         }
 
         const [hours, minutes] = timeStr.split(':').map(Number);
-        
+
         // UTC+8转UTC需要减去8小时
         let utcHours = hours - 8;
-        
+
         // 处理跨日情况
         if (utcHours < 0) {
             utcHours += 24;
         }
-        
+
         return `${utcHours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
     }
 
@@ -127,7 +127,7 @@ export class ConfigManager {
     getMonitorSettings() {
         const startTimeUTC8 = process.env.MONITOR_START_TIME || "09:00";
         const endTimeUTC8 = process.env.MONITOR_END_TIME || "23:00";
-        
+
         return {
             // 用户输入的UTC+8时间
             startTimeUTC8: startTimeUTC8,

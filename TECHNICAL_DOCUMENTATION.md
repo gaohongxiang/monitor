@@ -116,8 +116,8 @@ API_CREDENTIALS='[
 ]'
 
 # 可选配置
-MONITOR_START_TIME=09:00  # 生产环境监控开始时间
-MONITOR_END_TIME=23:00    # 生产环境监控结束时间
+MONITOR_START_TIME=09:00  # 生产环境监控开始时间（北京时间UTC+8）
+MONITOR_END_TIME=23:00    # 生产环境监控结束时间（北京时间UTC+8）
 ```
 
 ### 数据库表结构
@@ -639,8 +639,8 @@ npm start            # 生产模式启动
 DINGTALK_ACCESS_TOKEN=your_dingtalk_token
 DATABASE_URL=postgresql://user:pass@host:port/db
 API_CREDENTIALS='[{"id":"cred_1","monitorUser":"username",...}]'
-MONITOR_START_TIME=09:00
-MONITOR_END_TIME=23:00
+MONITOR_START_TIME=09:00  # 北京时间UTC+8
+MONITOR_END_TIME=23:00    # 北京时间UTC+8
 ```
 
 ## 故障排除

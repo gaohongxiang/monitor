@@ -1,6 +1,7 @@
 import { twitterMonitor } from './monitor.js';
 import { configManager } from './config.js';
 import { databaseManager } from './database.js';
+import { TimeUtils } from './timeUtils.js';
 import http from 'http';
 
 /**
@@ -290,9 +291,16 @@ class TwitterMonitorApp {
             if (scheduleStatus) {
                 console.log(`调度任务: ${scheduleStatus.isRunning ? '✅ 运行中' : '❌ 已停止'}`);
 
-                // 显示每个用户的调度信息
+                // 显示每个用户的调度信息和下次触发时间
                 Object.entries(scheduleStatus.users).forEach(([nickname, userInfo]) => {
                     console.log(`  - ${nickname}: ${userInfo.taskCount} 个时间点`);
+                    
+                    // 获取下次执行信息
+                    const nextExecution = twitterMonitor.scheduleManager?.getNextExecutionInfo(nickname);
+                    if (nextExecution) {
+                        const remainingTime = TimeUtils.formatRemainingTime(nextExecution.minutesUntil);
+                        console.log(`    下次触发: ${nextExecution.utc8Time} (UTC+8), 还有 ${remainingTime}`);
+                    }
                 });
             }
 
