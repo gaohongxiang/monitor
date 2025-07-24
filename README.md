@@ -6,7 +6,7 @@
 
 - 🔄 **多API凭证轮换** - 智能管理多个Twitter API凭证，避免限流问题
 - ⏰ **智能时间调度** - 根据环境和API数量自动分配监控时间点
-- 🗄️ **数据库持久化** - 使用PostgreSQL存储认证信息和监控状态
+- 🗄️ **数据库持久化** - 使用Supabase PostgreSQL存储认证信息和监控状态
 - 🔐 **预先认证系统** - 独立的OAuth认证工具，支持批量认证
 - 📱 **钉钉通知集成** - 实时推送新推文到钉钉群
 - 🌍 **环境分离** - 支持开发和生产环境完全隔离
@@ -45,14 +45,14 @@ Twitter API V2免费版限制严格：
 4. **按需重连** - PostgreSQL应该是有限制，闲置会断开连接。下个监控时间点自动重连
 
 **技术收益**：
-- Railway免费提供PostgreSQL数据库
+- Supabase提供稳定的PostgreSQL数据库服务
 - 数据持久化，重启不丢失
 - 支持多实例部署（未来扩展）
 
 ## 📋 环境要求
 
 - Node.js 18+
-- PostgreSQL数据库
+- Supabase PostgreSQL数据库
 - Twitter API v2凭证
 - 钉钉机器人访问令牌
 - Bitbrowser指纹浏览器
@@ -81,25 +81,30 @@ Twitter API V2免费版限制严格：
 
 6. 第五步填写完后跳转到OAuth 2.0页面，**记下OAuth 2.0的 Client ID 和 Client Secret**
 
-### 注册Railway平台创建数据库
+### 创建Supabase数据库
 
-1. 访问 [Railway官网](https://railway.app/)
-2. 点击 "Start a New Project" 或 "Login" 
-3. 使用GitHub账号登录（推荐）或注册新账号
-4. 创建新项目：
-   - 点击 "New Project"
-   - 选择 "Provision PostgreSQL" 
-   - 等待数据库创建完成
+**选择Supabase的优势**：
+- ✅ **更稳定可靠** - 基于AWS基础设施，连接更稳定
+- ✅ **免费额度充足** - 500MB存储，长期免费使用
+- ✅ **管理界面友好** - 直观的数据库管理和监控工具
+- ✅ **IPv4兼容** - 解决部署连接问题，支持所有平台
 
-5. 获取数据库连接信息：
-   - 在项目面板中点击PostgreSQL服务
-   - 切换到 "Connect" 标签页
-   - 复制 "Postgres Connection URL"
-   - 格式类似：`postgresql://postgres:password@containers-us-west-xxx.railway.app:6543/railway`
+1. 访问 [Supabase官网](https://supabase.com/)
+2. 点击 "Start your project" 或使用GitHub账号登录
+3. 创建新项目：
+   - 点击 "New project"
+   - 填写项目信息（名称、数据库密码、区域）
+   - 选择免费计划
+   - 等待项目创建完成
 
-6. 数据库链接有两个：DATABASE_URL 和 DATABASE_PUBLIC_UR，本地开发环境配置到环境变量中数据库链接使用DATABASE_PUBLIC_UR的值。railway生产环境用 DATABASE_URL=${{ Postgres.DATABASE_URL }} 就可以。
+4. 获取数据库连接信息：
+   - 进入项目仪表板
+   - 点击 Settings → Database
+   - 在 Connection string 部分选择 "Transaction pooler"
+   - 复制连接字符串并替换密码
+   - 格式类似：`postgresql://postgres.xxx:password@aws-0-us-west-1.pooler.supabase.com:6543/postgres`
 
-由于数据库里存的是同一个twitter用户的刷新令牌，所以开发环境和生产环境我用的同一个数据库。
+由于数据库里存的是同一个twitter用户的刷新令牌，所以开发环境和生产环境使用同一个数据库。
 
 ### 创建钉钉机器人
 
@@ -183,18 +188,20 @@ npm run dev
 ## 🐳 Railway部署
 
 ### 1. 准备部署
-- 将代码推送到GitHub仓库
-- 在Railway控制台连接GitHub仓库
-
-### 2. 添加数据库
-- 在Railway项目中添加PostgreSQL插件
-- 系统会自动设置 `DATABASE_URL` 环境变量
+1. 访问 [Railway官网](https://railway.app/)
+2. 点击 "Start a New Project" 或 "Login" 
+3. 使用GitHub账号登录（推荐）或注册新账号
+4. 创建新项目：
+   - 点击 "New Project"
+   - 选择 "Deploy from GitHub repo"
+   - 连接你的GitHub仓库
 
 ### 3. 设置环境变量
 在Railway控制台设置：
 ```
-DINGTALK_ACCESS_TOKEN=your_token
 API_CREDENTIALS=your_json_config
+DATABASE_URL=Supabase PostgreSQL URL
+DINGTALK_ACCESS_TOKEN=your_token
 MONITOR_START_TIME=09:00
 MONITOR_END_TIME=23:00
 ```

@@ -8,7 +8,7 @@ Twitter多用户监控系统是一个基于Node.js的自动化监控平台，支
 
 - 🔄 **多API凭证轮换** - 智能管理多个Twitter API凭证，避免限流问题
 - ⏰ **智能时间调度** - 根据环境和API数量自动分配监控时间点
-- 🗄️ **数据库持久化** - 使用PostgreSQL存储动态数据和认证信息
+- 🗄️ **数据库持久化** - 使用Supabase PostgreSQL存储动态数据和认证信息
 - 🔐 **预先认证系统** - 独立的OAuth认证工具，支持批量认证
 - 📱 **钉钉通知集成** - 实时推送新推文到钉钉群
 - 🌍 **环境分离** - 支持开发和生产环境完全隔离
@@ -38,7 +38,7 @@ graph TB
     C --> M[钉钉通知器]
     
     N[环境变量] --> D
-    O[PostgreSQL数据库] --> E
+    O[Supabase PostgreSQL] --> E
     E --> P[refreshToken存储]
     E --> Q[监控状态存储]
     
@@ -586,7 +586,7 @@ GET /health
 ### Railway部署
 - **自动容器化** - 支持Railway的自动容器化
 - **环境变量管理** - 通过Railway控制台管理环境变量
-- **数据库集成** - 使用Railway的PostgreSQL服务
+- **数据库集成** - 使用Supabase PostgreSQL数据库服务
 - **健康检查** - 内置HTTP健康检查端点
 
 ### 部署配置
