@@ -215,7 +215,8 @@ export class ConfigManager {
             startTime: this.convertUTC8ToUTC(startTimeUTC8),
             endTime: this.convertUTC8ToUTC(endTimeUTC8),
             testMode: process.env.TEST_MODE === 'true',
-            testIntervalMinutes: parseInt(process.env.TEST_INTERVAL || "1")
+            testIntervalMinutes: parseInt(process.env.TEST_INTERVAL || "1"),
+            dailyRequestsPerApi: parseInt(process.env.DAILY_REQUESTS_PER_API || "3")
         };
     }
 

@@ -266,7 +266,14 @@ export class XClient {
                 throw new Error('Twitter客户端未初始化');
             }
 
-            const { userId, nickname } = await this.findUserByUsername(username);
+            // 缓存用户ID，避免重复API请求
+            if (!this.cachedUserInfo || this.cachedUserInfo.username !== username) {
+                const { userId, nickname } = await this.findUserByUsername(username);
+                this.cachedUserInfo = { username, userId, nickname };
+                console.log(`缓存用户信息 [用户: ${username}] [ID: ${userId}]`);
+            }
+
+            const { userId, nickname } = this.cachedUserInfo;
 
             // 构建查询参数 - 获取足够的推文来覆盖监控间隔
             const params = {

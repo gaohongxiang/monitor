@@ -95,11 +95,11 @@ export class ScheduleManager {
             return scheduleTimes;
         }
 
-        // 生产模式：每个API每天3次请求
         // 固定开始和结束时间，中间均匀分配剩余的请求
         console.log(`🏭 生产模式 - 监控时间: ${settings.startTime} - ${settings.endTime}`);
 
-        const totalRequests = apiCredentialCount * 3; // 每个API每天3次
+        const dailyRequestsPerApi = settings.dailyRequestsPerApi || 3;
+        const totalRequests = apiCredentialCount * dailyRequestsPerApi; // 根据环境变量配置每天请求次数
 
         // 计算开始和结束时间的总分钟数
         const startMinutes = startTime.hour * 60 + startTime.minute;
@@ -195,7 +195,7 @@ export class ScheduleManager {
                     const utcTimeStr = timePoint.second !== undefined
                         ? `${timePoint.hour}:${timePoint.minute.toString().padStart(2, '0')}:${timePoint.second.toString().padStart(2, '0')}`
                         : `${timePoint.hour}:${timePoint.minute.toString().padStart(2, '0')}`;
-                    
+
                     // 转换为UTC+8显示
                     const utc8TimeStr = TimeUtils.convertUTCTimesToUTC8([utcTimeStr.substring(0, 5)])[0];
                     const taskId = `${nickname}-${timePoint.credentialIndex}-${utcTimeStr}`;
