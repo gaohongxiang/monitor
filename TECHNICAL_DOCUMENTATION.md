@@ -1023,3 +1023,53 @@ twitter-multi-user-monitor/
 ---
 
 *最后更新: 2024年1月*
+## 已知
+问题和解决方案
+
+### 1. 数据库连接断开问题
+**问题**: Railway免费版PostgreSQL连接可能在空闲时断开
+**解决方案**: 实现按需重连机制，每次监控前检查连接状态
+
+### 2. 重复推文推送问题 ⭐ 重要修复
+**问题**: Twitter API的`start_time`参数是包含性的，使用推文的`created_at`时间作为下次查询的起始时间会导致重复获取同一条推文
+
+**根本原因**: 
+- 系统使用最新推文的`createdAt`时间作为`lastCheckTime`
+- Twitter API的`start_time`参数包含指定时间点的推文
+- 导致同一条推文在多次监控中被重复获取和推送
+
+**解决方案**: 
+1. **时间偏移机制**: 在最新推文时间基础上加1毫秒作为下次查询的起始时间
+2. **客户端过滤**: 在X客户端中添加额外的时间过滤，确保只返回真正新于`lastCheckTime`的推文
+3. **双重保障**: 两种机制同时工作，确保即使一种失效也不会出现重复推送
+
+**修复代码**:
+```javascript
+// monitor.js - 时间偏移机制
+const nextCheckTime = new Date(new Date(latestTweet.createdAt).getTime() + 1).toISOString();
+await this.updateLastCheckTime(nickname, nextCheckTime);
+
+// x.js - 客户端过滤
+if (lastCheckTime) {
+    const checkTimeMs = new Date(lastCheckTime).getTime();
+    filteredTweets = formattedTweets.filter(tweet => {
+        const tweetTimeMs = new Date(tweet.createdAt).getTime();
+        return tweetTimeMs > checkTimeMs;
+    });
+}
+```
+
+**验证结果**: 
+- 时间偏移测试: ✅ 通过
+- 客户端过滤测试: ✅ 通过
+- 重复推文问题: ✅ 已解决
+
+---
+
+## 版本历史
+
+### v1.2.0 - 重复推文修复版本
+- 🐛 修复Twitter API start_time包含性导致的重复推文推送问题
+- ✨ 实现时间偏移机制（+1毫秒）
+- ✨ 添加客户端推文时间过滤
+- 🔧 优化监控逻辑，提高推文去重准确性

@@ -318,9 +318,22 @@ export class XClient {
             // 按时间倒序排序（最新的在前面，符合用户期望）
             formattedTweets.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
-            // 由于API已经基于start_time过滤，返回的推文都应该是新的
-            console.log(`获取完成 [用户: ${username}] [推文: ${formattedTweets.length}条] [API请求: 1次]`);
-            return formattedTweets;
+            // 额外的客户端时间过滤，确保不返回等于或早于lastCheckTime的推文
+            let filteredTweets = formattedTweets;
+            if (lastCheckTime) {
+                const checkTimeMs = new Date(lastCheckTime).getTime();
+                filteredTweets = formattedTweets.filter(tweet => {
+                    const tweetTimeMs = new Date(tweet.createdAt).getTime();
+                    return tweetTimeMs > checkTimeMs;
+                });
+                
+                if (filteredTweets.length < formattedTweets.length) {
+                    console.log(`客户端时间过滤: ${formattedTweets.length}条 -> ${filteredTweets.length}条 [过滤掉${formattedTweets.length - filteredTweets.length}条重复/旧推文]`);
+                }
+            }
+
+            console.log(`获取完成 [用户: ${username}] [推文: ${filteredTweets.length}条] [API请求: 1次]`);
+            return filteredTweets;
 
         } catch (error) {
             console.error(`获取用户推文失败 [用户 ${username}]`, error);

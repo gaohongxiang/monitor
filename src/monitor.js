@@ -333,6 +333,7 @@ export class xMonitorManager {
      * 更新最后检查时间
      * @param {string} nickname - 用户昵称
      * @param {string} checkTime - 检查时间（UTC时间）
+     * @returns {Promise<boolean>} 是否更新成功
      */
     async updateLastCheckTime(nickname, checkTime) {
         try {
@@ -356,17 +357,20 @@ export class xMonitorManager {
                         nickname,
                         checkTime: checkTime
                     });
+                    return true;
                 } else {
                     this.logMonitorEvent('warn', '数据库更新返回false', {
                         nickname,
                         checkTime: checkTime
                     });
+                    return false;
                 }
             } else {
                 this.logMonitorEvent('warn', '数据库不健康，跳过更新最后检查时间', {
                     nickname,
                     checkTime
                 });
+                return false;
             }
         } catch (error) {
             this.logMonitorEvent('warn', '更新最后检查时间失败', {
@@ -375,6 +379,8 @@ export class xMonitorManager {
                 error: error.message,
                 stack: error.stack
             });
+            // 抛出异常，让调用方知道更新失败
+            throw error;
         }
     }
 
@@ -418,13 +424,21 @@ export class xMonitorManager {
                 existingTweets = JSON.parse(fs.readFileSync(filepath, 'utf8'));
             }
 
-            // API已经基于时间过滤，返回的推文都是新的，直接保存
-            existingTweets.push(...tweets);
-            fs.writeFileSync(filepath, JSON.stringify(existingTweets, null, 2));
-            console.log(`保存 ${tweets.length} 条新推文到 ${filename}`);
+            // 过滤重复推文：检查推文ID是否已存在
+            const existingTweetIds = new Set(existingTweets.map(tweet => tweet.id));
+            const newTweets = tweets.filter(tweet => !existingTweetIds.has(tweet.id));
 
-            // 返回所有推文，供后续处理使用
-            return tweets;
+            if (newTweets.length > 0) {
+                // 只保存真正的新推文
+                existingTweets.push(...newTweets);
+                fs.writeFileSync(filepath, JSON.stringify(existingTweets, null, 2));
+                console.log(`保存 ${newTweets.length} 条新推文到 ${filename}（过滤了 ${tweets.length - newTweets.length} 条重复推文）`);
+            } else {
+                console.log(`所有 ${tweets.length} 条推文都是重复的，跳过保存`);
+            }
+
+            // 只返回真正的新推文，避免重复通知
+            return newTweets;
         } catch (error) {
             console.error('保存推文失败:', error);
             return [];
@@ -569,7 +583,9 @@ export class xMonitorManager {
             // 更新最后检查时间
             if (tweets.length > 0) {
                 const latestTweet = tweets[0]; // 最新推文（倒序排序后的第一个）
-                await this.updateLastCheckTime(nickname, latestTweet.createdAt);
+                // 在最新推文时间基础上加1毫秒，避免Twitter API的start_time包含性导致重复获取
+                const nextCheckTime = new Date(new Date(latestTweet.createdAt).getTime() + 1).toISOString();
+                await this.updateLastCheckTime(nickname, nextCheckTime);
 
                 this.logMonitorEvent('info', `成功获取推文`, {
                     nickname,
@@ -1051,28 +1067,46 @@ export class xMonitorManager {
                 // 使用最新推文的时间作为下次检查的起始时间
                 const latestTweet = tweets[0]; // 因为已按时间倒序排序，第一个是最新的
                 // 确保时间格式正确
-                const checkTime = latestTweet.createdAt instanceof Date ?
+                let checkTime = latestTweet.createdAt instanceof Date ?
                     latestTweet.createdAt.toISOString() :
                     latestTweet.createdAt;
-                await this.updateLastCheckTime(nickname, checkTime);
+                
+                // 为了避免重复推送，在最新推文时间基础上加1毫秒
+                const timeObj = new Date(checkTime);
+                timeObj.setMilliseconds(timeObj.getMilliseconds() + 1);
+                checkTime = timeObj.toISOString();
+                
+                // 先尝试更新时间，只有更新成功才发送通知
+                try {
+                    await this.updateLastCheckTime(nickname, checkTime);
+                    
+                    this.logMonitorEvent('info', `调度监控成功获取推文`, {
+                        nickname,
+                        credentialIndex,
+                        count: tweets.length,
+                        latestTweet: latestTweet.createdAt,
+                        updatedCheckTime: checkTime
+                    });
 
-                this.logMonitorEvent('info', `调度监控成功获取推文`, {
-                    nickname,
-                    credentialIndex,
-                    count: tweets.length,
-                    latestTweet: latestTweet.createdAt
-                });
+                    // 保存推文和发送通知
+                    console.log(`准备保存推文到文件，推文数量: ${tweets.length}`);
+                    const newTweets = this.saveTweetsToFile(tweets);
+                    console.log(`saveTweetsToFile返回的新推文数量: ${newTweets.length}`);
 
-                // 保存推文和发送通知
-                console.log(`准备保存推文到文件，推文数量: ${tweets.length}`);
-                const newTweets = this.saveTweetsToFile(tweets);
-                console.log(`saveTweetsToFile返回的新推文数量: ${newTweets.length}`);
-
-                if (newTweets.length > 0) {
-                    console.log(`准备处理新推文并发送通知`);
-                    this.handleNewTweets(newTweets);
-                } else {
-                    console.log(`没有新推文需要处理，可能是重复推文`);
+                    if (newTweets.length > 0) {
+                        console.log(`时间更新成功，准备处理新推文并发送通知`);
+                        this.handleNewTweets(newTweets);
+                    } else {
+                        console.log(`没有新推文需要处理，可能是重复推文`);
+                    }
+                } catch (timeUpdateError) {
+                    this.logMonitorEvent('error', `时间更新失败，跳过推文通知以避免重复推送`, {
+                        nickname,
+                        credentialIndex,
+                        error: timeUpdateError.message,
+                        tweetCount: tweets.length
+                    });
+                    console.log(`⚠️ 时间更新失败，跳过通知发送以避免重复推送`);
                 }
             } else {
                 // 没有新推文时不更新检查时间，保持原有时间点继续查询
