@@ -16,7 +16,7 @@ export class UnifiedConfigManager {
         this.configWatchers = new Map();
         this.hotUpdateCallbacks = new Map();
         this.lastLoadTime = null;
-        
+
         // 初始化配置验证器和模板
         this.initializeValidators();
         this.initializeTemplates();
@@ -30,7 +30,7 @@ export class UnifiedConfigManager {
         this.configValidators.set('twitter', {
             validate: (config) => {
                 const errors = [];
-                
+
                 if (!config.apiCredentials || !Array.isArray(config.apiCredentials)) {
                     errors.push('apiCredentials必须是数组');
                 } else if (config.apiCredentials.length === 0) {
@@ -48,19 +48,19 @@ export class UnifiedConfigManager {
 
                 if (config.monitorSettings) {
                     const { startTimeUTC8, endTimeUTC8, testIntervalMinutes, dailyRequestsPerApi } = config.monitorSettings;
-                    
+
                     if (startTimeUTC8 && !/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/.test(startTimeUTC8)) {
                         errors.push('startTimeUTC8格式无效，应为HH:MM');
                     }
-                    
+
                     if (endTimeUTC8 && !/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/.test(endTimeUTC8)) {
                         errors.push('endTimeUTC8格式无效，应为HH:MM');
                     }
-                    
+
                     if (testIntervalMinutes && (testIntervalMinutes < 1 || testIntervalMinutes > 60)) {
                         errors.push('testIntervalMinutes必须在1-60之间');
                     }
-                    
+
                     if (dailyRequestsPerApi && (dailyRequestsPerApi < 1 || dailyRequestsPerApi > 10)) {
                         errors.push('dailyRequestsPerApi必须在1-10之间');
                     }
@@ -74,7 +74,7 @@ export class UnifiedConfigManager {
         this.configValidators.set('binance', {
             validate: (config) => {
                 const errors = [];
-                
+
                 if (!config.restApiUrl) {
                     errors.push('restApiUrl是必需的');
                 } else if (!config.restApiUrl.startsWith('http')) {
@@ -113,12 +113,11 @@ export class UnifiedConfigManager {
         this.configValidators.set('system', {
             validate: (config) => {
                 const errors = [];
-                
+
                 if (!config.enabledModules || !Array.isArray(config.enabledModules)) {
                     errors.push('enabledModules必须是数组');
-                } else if (config.enabledModules.length === 0) {
-                    errors.push('至少需要启用一个监控模块');
                 }
+                // 允许空的启用模块列表，所有模块默认关闭
 
                 if (config.port && (config.port < 1000 || config.port > 65535)) {
                     errors.push('port必须在1000-65535之间');
@@ -137,7 +136,7 @@ export class UnifiedConfigManager {
         this.configValidators.set('shared', {
             validate: (config) => {
                 const errors = [];
-                
+
                 if (!config.database || !config.database.url) {
                     errors.push('database.url是必需的');
                 }
@@ -165,7 +164,7 @@ export class UnifiedConfigManager {
     initializeTemplates() {
         // Twitter模块配置模板
         this.configTemplates.set('twitter', {
-            enabled: true,
+            enabled: false,
             type: 'social_media',
             apiCredentials: [
                 {
@@ -191,7 +190,7 @@ export class UnifiedConfigManager {
 
         // 币安模块配置模板
         this.configTemplates.set('binance', {
-            enabled: true,
+            enabled: false,
             type: 'crypto_exchange',
             apiKey: 'your_binance_api_key',
             apiSecret: 'your_binance_api_secret',
@@ -207,7 +206,7 @@ export class UnifiedConfigManager {
 
         // 系统配置模板
         this.configTemplates.set('system', {
-            enabledModules: ['twitter'],
+            enabledModules: [],
             environment: 'development',
             logLevel: 'info',
             port: 3000,
@@ -244,11 +243,11 @@ export class UnifiedConfigManager {
         try {
             // 加载系统级配置
             const systemConfig = this.loadSystemConfig();
-            
+
             // 加载启用的监控模块配置
             const enabledModules = this.getEnabledModules();
             const moduleConfigs = {};
-            
+
             for (const moduleName of enabledModules) {
                 moduleConfigs[moduleName] = this.loadModuleConfig(moduleName);
             }
@@ -290,22 +289,18 @@ export class UnifiedConfigManager {
     getEnabledModules() {
         const enabledModules = [];
 
-        // 检查TWITTER_ENABLED环境变量
+        // 检查TWITTER_ENABLED环境变量，只有明确设置为'true'才启用
         if (process.env.TWITTER_ENABLED === 'true') {
             enabledModules.push('twitter');
         }
 
-        // 检查BINANCE_ENABLED环境变量
+        // 检查BINANCE_ENABLED环境变量，只有明确设置为'true'才启用
         if (process.env.BINANCE_ENABLED === 'true') {
             enabledModules.push('binance');
         }
 
-        // 如果没有启用任何模块，回退到MONITOR_MODULES环境变量
-        if (enabledModules.length === 0) {
-            const modulesEnv = process.env.MONITOR_MODULES || 'twitter';
-            return modulesEnv.split(',').map(m => m.trim()).filter(m => m);
-        }
-
+        // 默认情况下所有模块都是关闭的，不提供回退机制
+        // 如果没有任何模块被明确启用，返回空数组
         return enabledModules;
     }
 
@@ -316,7 +311,7 @@ export class UnifiedConfigManager {
      */
     loadModuleConfig(moduleName) {
         const moduleEnabled = process.env[`${moduleName.toUpperCase()}_ENABLED`] !== 'false';
-        
+
         if (!moduleEnabled) {
             return { enabled: false };
         }
@@ -346,7 +341,7 @@ export class UnifiedConfigManager {
         try {
             const nestedConfig = JSON.parse(apiCredentialsJson);
             const apiCredentials = this.convertNestedToInternalFormat(nestedConfig);
-            
+
             return {
                 enabled: true,
                 type: 'social_media',
@@ -487,7 +482,7 @@ export class UnifiedConfigManager {
      * @param {Array<string>} modules - 要包含的模块列表
      * @returns {Object} 完整的配置模板
      */
-    generateConfigTemplate(modules = ['twitter']) {
+    generateConfigTemplate(modules = []) {
         const template = {
             system: this.getConfigTemplate('system'),
             shared: this.getConfigTemplate('shared'),
@@ -614,10 +609,10 @@ export class UnifiedConfigManager {
             // 如果启用的模块发生变化，需要重新加载模块配置
             const oldModules = oldConfig.enabledModules || [];
             const newModules = newSystemConfig.enabledModules || [];
-            
+
             if (JSON.stringify(oldModules.sort()) !== JSON.stringify(newModules.sort())) {
                 console.log('检测到启用模块变化，重新加载模块配置');
-                
+
                 // 移除不再启用的模块配置
                 for (const moduleName of oldModules) {
                     if (!newModules.includes(moduleName)) {
