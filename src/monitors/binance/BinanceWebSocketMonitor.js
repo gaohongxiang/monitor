@@ -532,7 +532,7 @@ export class BinanceWebSocketMonitor extends BaseMonitor {
             }
 
             // 构建可点击的链接
-            const binanceUrl = 'https://www.binance.com/zh-CN/support/announcement';
+            const binanceUrl = 'https://www.binance.com/en/support/announcement';
 
             // 构建优美的双语通知消息（钉钉不支持Markdown，使用纯文本格式）
             let notificationMessage = `. 🚨 Binance新公告`;
