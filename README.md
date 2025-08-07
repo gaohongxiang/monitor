@@ -1,16 +1,27 @@
-# Twitter多用户监控系统
+# 多源监控系统
 
-🚀 基于Node.js的Twitter多用户监控系统，支持多API凭证轮换、智能时间调度和钉钉通知。
+🚀 基于Node.js的统一监控平台，支持Twitter定时监控和Binance实时监控，统一钉钉通知推送。
 
 ## ✨ 核心特性
 
-- 🔄 **多API凭证轮换** - 智能管理多个Twitter API凭证，避免限流问题
-- ⏰ **智能时间调度** - 根据环境和API数量自动分配监控时间点
-- 🗄️ **数据库持久化** - 使用Supabase PostgreSQL存储认证信息和监控状态
-- 🔐 **预先认证系统** - 独立的OAuth认证工具，支持批量认证
-- 📱 **钉钉通知集成** - 实时推送新推文到钉钉群
-- 🌍 **环境分离** - 支持开发和生产环境完全隔离
-- 🚀 **Railway部署** - 支持部署到Railway平台
+### 🎯 **多源监控支持**
+- **Twitter监控** - 定时轮询，多API凭证管理，智能时间调度
+- **Binance监控** - 实时WebSocket连接，公告推送监控
+
+### 🔧 **统一架构**
+- **监控编排器** - 统一管理所有监控模块的生命周期
+- **模块化设计** - 每个监控源独立实现，可单独启用/禁用
+- **共享服务** - 统一的配置、数据库、通知、日志管理
+
+### 📱 **通知与存储**
+- **钉钉通知集成** - 实时推送监控结果到钉钉群
+- **数据库持久化** - 使用Supabase PostgreSQL存储状态和历史数据
+- **健康检查** - HTTP API提供系统状态监控
+
+### 🌍 **部署与运维**
+- **环境分离** - 支持开发和生产环境配置
+- **优雅关闭** - 支持信号处理和资源清理
+- **Railway部署** - 支持一键部署到云平台
 
 ## 🤔 技术选型背景
 
@@ -52,12 +63,20 @@ Twitter API V2免费版限制严格：
 
 ## 📋 环境要求
 
+### 基础环境
 - Node.js 18+
+- 钉钉机器人访问令牌
+
+### Twitter监控（可选）
 - Supabase PostgreSQL数据库
 - Twitter API v2凭证
-- 钉钉机器人访问令牌
-- Bitbrowser指纹浏览器
-- Railway
+- Bitbrowser指纹浏览器（认证用）
+
+### Binance监控（可选）
+- Binance API Key 和 Secret Key
+
+### 部署平台
+- Railway（推荐）或其他Node.js托管平台
 
 ## 🛠️ 准备工作
 
@@ -106,6 +125,30 @@ Twitter API V2免费版限制严格：
    - 格式类似：`postgresql://postgres.xxx:password@aws-0-us-west-1.pooler.supabase.com:6543/postgres`
 
 由于数据库里存的是同一个twitter用户的刷新令牌，所以开发环境和生产环境使用同一个数据库。
+
+### 获取Binance API密钥
+
+**如果启用Binance监控，需要获取API密钥**：
+
+1. **登录Binance账户**：
+   - 访问 [Binance官网](https://www.binance.com/)
+   - 登录你的Binance账户
+
+2. **创建API密钥**：
+   - 进入 "API管理" 页面
+   - 点击 "创建API"
+   - 设置API名称（如：Monitor API）
+   - **权限设置**：只需要 "读取" 权限（不需要交易权限）
+   - 完成安全验证（邮箱、短信等）
+
+3. **获取密钥信息**：
+   - **API Key**：复制API密钥
+   - **Secret Key**：复制密钥（只显示一次，请妥善保存）
+
+4. **安全建议**：
+   - 启用IP白名单（可选，但推荐）
+   - 定期轮换API密钥
+   - 只授予必要的最小权限
 
 ### 创建钉钉机器人
 
@@ -160,31 +203,61 @@ npm install
 # 复制并编辑环境变量文件
 cp .env.example .env
 ```
-将自己准备好的数据填入环境变量
 
-### 3. 数据库迁移（如果是从旧版本升级）
+**环境变量配置示例**：
 ```bash
-# 执行数据库迁移（整合监控表）
-npm run migrate
+# ===== 模块控制 =====
+TWITTER_ENABLED=true    # 启用/禁用Twitter监控
+BINANCE_ENABLED=true    # 启用/禁用Binance监控
 
-# 如果迁移出现问题，可以回滚
-npm run migrate:rollback
+# ===== 通知配置 =====
+DINGTALK_ACCESS_TOKEN=你的钉钉机器人访问令牌
+
+# ===== Binance实时监控配置 =====
+BINANCE_API_KEY=你的Binance_API密钥
+BINANCE_SECRET_KEY=你的Binance_Secret密钥
+
+# ===== Twitter定时监控配置 =====
+DATABASE_URL=你的Supabase数据库连接字符串
+API_CREDENTIALS='[{"username":"用户名","credentials":[...]}]'
+MONITOR_START_TIME=09:00
+MONITOR_END_TIME=23:00
 ```
 
-### 4. 认证API凭证
+**模块控制说明**：
+- 可以只启用Twitter监控：`TWITTER_ENABLED=true, BINANCE_ENABLED=false`
+- 可以只启用Binance监控：`TWITTER_ENABLED=false, BINANCE_ENABLED=true`
+- 可以同时启用两个模块：`TWITTER_ENABLED=true, BINANCE_ENABLED=true`
+
+### 3. 数据库初始化
+数据库表结构会在系统首次启动时自动创建，无需手动迁移。
+
+### 4. 认证API凭证（仅Twitter监控需要）
 ```bash
-# 认证所有配置的API凭证
+# 如果启用了Twitter监控，需要认证API凭证
 npm run auth
 
 # 检查认证状态
 npm run auth:check
 ```
 
+**注意**：
+- **Twitter监控**：需要OAuth认证，使用指纹浏览器完成认证流程
+- **Binance监控**：只需要API密钥，无需额外认证步骤
+
 ### 5. 启动系统
 ```bash
-# 开发环境 - 立即开始测试，每1分钟执行一次
+# 开发环境启动
 npm run dev
+
+# 生产环境启动
+npm start
 ```
+
+**启动后系统状态**：
+- **Twitter监控**：定时轮询模式，按配置的时间点执行
+- **Binance监控**：实时WebSocket连接，立即开始监控
+- **健康检查**：`http://localhost:3000/health` 和 `/status`
 
 ## 🐳 Railway部署
 
@@ -199,10 +272,21 @@ npm run dev
 
 ### 3. 设置环境变量
 在Railway控制台设置：
-```
-API_CREDENTIALS=your_json_config
-DATABASE_URL=Supabase PostgreSQL URL
-DINGTALK_ACCESS_TOKEN=your_token
+```bash
+# 模块控制
+TWITTER_ENABLED=true
+BINANCE_ENABLED=true
+
+# 通知配置
+DINGTALK_ACCESS_TOKEN=your_dingtalk_token
+
+# Binance配置（如果启用）
+BINANCE_API_KEY=your_binance_api_key
+BINANCE_SECRET_KEY=your_binance_secret_key
+
+# Twitter配置（如果启用）
+DATABASE_URL=your_supabase_postgresql_url
+API_CREDENTIALS=your_twitter_json_config
 MONITOR_START_TIME=09:00
 MONITOR_END_TIME=23:00
 ```
@@ -219,35 +303,36 @@ MONITOR_END_TIME=23:00
 # 健康状态
 curl http://localhost:3000/health
 
-# 详细状态
+# 详细状态（包含各模块状态）
 curl http://localhost:3000/status
 ```
 
 ### 日志查看
-- 系统日志：控制台输出
-- 推文数据：`data/monitor/tweets/`
-- 监控统计：存储在数据库中
+- **系统日志**：控制台输出，包含所有模块的运行状态
+- **Twitter数据**：`data/monitor/tweets/`（如果启用Twitter监控）
+- **Binance数据**：实时处理，通过钉钉通知推送
+- **监控统计**：存储在数据库中，可通过状态API查看
+
+### 监控指标
+- **Twitter监控**：API调用次数、成功率、限流状态
+- **Binance监控**：WebSocket连接状态、心跳、接收消息数
+- **通知系统**：钉钉消息发送成功率
 
 ## 🛠️ 常用命令
 
 ```bash
-# 开发和测试
-npm run dev          # 开发模式启动
-npm run test         # 运行系统测试
-npm run verify       # 验证部署
-
-# 认证管理
-npm run auth         # 认证所有凭证
-npm run auth:check   # 检查认证状态
-
-# 数据库管理
-npm run migrate      # 执行数据库迁移
-npm run migrate:rollback # 回滚数据库迁移
-
 # 生产部署
 npm start            # 生产模式启动
+
+# 开发模式
+npm run dev          # 开发模式启动（测试间隔1分钟）
+
+# Twitter认证管理（仅Twitter监控需要）
+npm run auth         # 认证所有Twitter凭证
+npm run auth:check   # 检查Twitter认证状态
 ```
 
 ## 📚 更多文档
 
-- [技术文档](TECHNICAL_DOCUMENTATION.md) - 详细的技术架构和实现原理
+- 技术文档(详细的技术架构和实现原理): TECHNICAL_DOCUMENTATION.md
+-binance WebSocket API文档: https://developers.binance.com/docs/zh-CN/cms/general-info#%E7%AD%BE%E5%90%8D

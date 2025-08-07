@@ -7,10 +7,8 @@
   "scripts": {
     "start": "NODE_ENV=production node src/index.js",
     "dev": "NODE_ENV=development TEST_MODE=true TEST_INTERVAL=1 node src/index.js",
-    "test": "node tests/test_system.js",
-    "verify": "node tests/verify_deployment.js",
-    "auth": "node tools/authenticate.js",
-    "auth:check": "node tools/authenticate.js check"
+    "auth": "node -e \"import('./src/monitors/twitter/TwitterAuthenticator.js').then(m => { const auth = new m.TwitterAuthenticator(); auth.initializeDatabase().then(() => auth.authenticateAllCredentials()); })\"",
+    "auth:check": "node -e \"import('./src/monitors/twitter/TwitterAuthenticator.js').then(m => { const auth = new m.TwitterAuthenticator(); auth.initializeDatabase().then(() => auth.checkAuthenticationStatus()); })\""
   },
   "keywords": [
     "twitter",
@@ -29,10 +27,12 @@
   "dependencies": {
     "axios": "^1.10.0",
     "dotenv": "^17.2.0",
+    "google-translate-api-x": "^10.7.2",
     "node-cron": "^4.2.1",
     "pg": "^8.11.3",
     "playwright": "^1.54.1",
     "socks-proxy-agent": "^8.0.5",
-    "twitter-api-v2": "^1.24.0"
+    "twitter-api-v2": "^1.24.0",
+    "ws": "^8.18.3"
   }
 }

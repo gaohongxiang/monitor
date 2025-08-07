@@ -1,108 +1,121 @@
-# Twitter多用户监控系统 - 技术文档
+# 多源监控系统 - 技术文档
 
 ## 项目概述
 
-Twitter多用户监控系统是一个基于Node.js的自动化监控平台，支持多API凭证管理、智能时间调度、推文获取和钉钉通知功能。系统采用环境变量+数据库的混合架构，实现敏感数据安全存储、动态数据持久化，并支持开发和生产环境分离。
+多源监控系统是一个基于Node.js的统一监控平台，支持Twitter定时监控和Binance实时监控。系统采用模块化架构，通过监控编排器统一管理多个监控源，支持独立启用/禁用各监控模块，并提供统一的通知和日志服务。
 
 ## 核心特性
 
-- 🔄 **多API凭证轮换** - 智能管理多个Twitter API凭证，避免限流问题
-- ⏰ **智能时间调度** - 根据环境和API数量自动分配监控时间点
-- 🗄️ **数据库持久化** - 使用Supabase PostgreSQL存储动态数据和认证信息
-- 🔐 **预先认证系统** - 独立的OAuth认证工具，支持批量认证
-- 📱 **钉钉通知集成** - 实时推送新推文到钉钉群
-- 🌍 **环境分离** - 支持开发和生产环境完全隔离
-- 🚀 **Railway部署** - 支持一键部署到Railway平台
+### 🎯 **多源监控支持**
+- **Twitter监控** - 定时轮询，多API凭证管理，智能时间调度
+- **Binance监控** - 实时WebSocket连接，公告推送监控
+
+### 🔧 **统一架构**
+- **监控编排器** - 统一管理所有监控模块的生命周期
+- **模块化设计** - 每个监控源独立实现，可单独启用/禁用
+- **共享服务** - 统一的配置、数据库、通知、日志管理
+
+### 📱 **通知与存储**
+- **钉钉通知集成** - 实时推送监控结果到钉钉群
+- **数据库持久化** - 使用Supabase PostgreSQL存储状态和历史数据
+- **健康检查** - HTTP API提供系统状态监控
+
+### 🌍 **部署与运维**
+- **环境分离** - 支持开发和生产环境配置
+- **优雅关闭** - 支持信号处理和资源清理
+- **Railway部署** - 支持一键部署到云平台
 
 ## 系统架构
 
-### 架构图
+### 整体架构图
 
 ```mermaid
 graph TB
-    A[主程序 index.js] --> B[调度管理器 ScheduleManager]
-    A --> C[监控管理器 MonitorManager]
-    A --> D[配置管理器 ConfigManager]
-    A --> E[数据库管理器 DatabaseManager]
-    
-    B --> F[定时任务调度]
-    B --> G[时间计算算法]
-    
-    C --> H[XClient - Twitter API]
-    C --> I[推文获取与处理]
-    C --> J[API限额管理]
-    
-    H --> K[XAuthenticator - OAuth认证]
-    H --> L[推文API调用]
-    
-    C --> M[钉钉通知器]
-    
-    N[环境变量] --> D
-    O[Supabase PostgreSQL] --> E
-    E --> P[refreshToken存储]
-    E --> Q[监控状态存储]
-    
-    R[指纹浏览器] --> K
-    S[Twitter API] --> L
-    T[钉钉API] --> M
+    A[主程序 src/index.js] --> B[监控编排器 MonitorOrchestrator]
+    A --> C[共享服务层]
+
+    C --> D[配置管理器 UnifiedConfigManager]
+    C --> E[数据库管理器 UnifiedDatabaseManager]
+    C --> F[通知管理器 UnifiedNotifierManager]
+    C --> G[日志管理器 UnifiedLoggerManager]
+
+    B --> H[Twitter监控模块]
+    B --> I[Binance监控模块]
+
+    H --> J[TwitterMonitor]
+    H --> K[TwitterScheduler - 定时调度]
+    H --> L[TwitterApiClient - API客户端]
+
+    I --> M[BinanceWebSocketMonitor]
+    I --> N[WebSocket连接管理]
+    I --> O[实时公告处理]
+
+    J --> P[Twitter API]
+    M --> Q[Binance WebSocket API]
+
+    F --> R[钉钉机器人API]
+    E --> S[Supabase PostgreSQL]
+
+    T[环境变量 .env] --> D
+    U[HTTP健康检查 :3000] --> A
 ```
 
 ### 核心组件
 
-#### 1. 调度管理器 (ScheduleManager)
-- **职责**: 管理所有用户的监控时间调度
-- **功能**: 
-  - 智能时间计算算法
-  - 定时任务创建和管理
-  - 北京时间处理
-  - 任务执行统计和重试机制
-
-#### 2. 监控管理器 (MonitorManager)
-- **职责**: 执行实际的推文监控任务
+#### 1. 监控编排器 (MonitorOrchestrator)
+- **职责**: 统一管理所有监控模块的生命周期
 - **功能**:
-  - 多用户Twitter监控
-  - API凭证轮换和限流处理
-  - 推文数据存储
-  - 钉钉通知发送
+  - 模块加载和初始化
+  - 健康检查和故障恢复
+  - 资源分配和状态管理
+  - 优雅启动和关闭
 
-#### 3. X客户端 (XClient)
-- **职责**: Twitter API交互
+#### 2. 共享服务层
+- **UnifiedConfigManager**: 统一配置管理，支持模块开关控制
+- **UnifiedDatabaseManager**: PostgreSQL连接池和表结构管理
+- **UnifiedNotifierManager**: 钉钉通知服务，支持限流和重试
+- **UnifiedLoggerManager**: 结构化日志记录和文件管理
+
+#### 3. Twitter监控模块
+- **TwitterMonitor**: Twitter监控主控制器
+- **TwitterScheduler**: 智能时间调度，支持多API凭证轮换
+- **TwitterApiClient**: Twitter API客户端，OAuth2认证和推文获取
+- **特点**: 定时轮询模式，避免API限流
+
+#### 4. Binance监控模块
+- **BinanceWebSocketMonitor**: Binance WebSocket监控器
 - **功能**:
-  - OAuth2认证和token刷新
-  - 推文获取（支持长推文）
-  - 代理支持和错误处理
+  - 实时WebSocket连接管理
+  - HMAC SHA256签名认证
+  - 心跳机制和自动重连
+  - 公告数据实时处理
+- **特点**: 实时推送模式，低延迟接收
 
-#### 4. 配置管理器 (ConfigManager)
-- **职责**: 环境变量配置管理
-- **功能**:
-  - JSON格式API凭证解析
-  - 配置验证和错误处理
-  - 环境特定配置加载
+#### 5. HTTP健康检查服务
+- **端点**: `http://localhost:3000/health` 和 `/status`
+- **功能**: 系统状态监控，支持外部健康检查
 
-#### 5. 数据库管理器 (DatabaseManager)
-- **职责**: PostgreSQL数据库操作
-- **功能**:
-  - 连接池管理
-  - 表结构自动初始化
-  - 环境分离支持
-
-#### 6. 预先认证工具 (AuthenticationTool)
-- **职责**: 独立的OAuth认证管理
-- **功能**:
-  - 批量和单独认证支持
-  - 认证状态检查和管理
-  - 指纹浏览器集成
-
-## 数据模型
+## 配置管理
 
 ### 环境变量配置
 ```bash
-# 必需配置
-DINGTALK_ACCESS_TOKEN=钉钉访问令牌
+# ===== 模块控制 =====
+TWITTER_ENABLED=true    # 启用/禁用Twitter监控
+BINANCE_ENABLED=true    # 启用/禁用Binance监控
+
+# ===== 通知配置 =====
+DINGTALK_ACCESS_TOKEN=钉钉机器人访问令牌
+
+# ===== Binance实时监控配置 =====
+# 只需要API密钥，实时WebSocket推送
+BINANCE_API_KEY=你的Binance_API密钥
+BINANCE_SECRET_KEY=你的Binance_Secret密钥
+
+# ===== Twitter定时监控配置 =====
+# 需要数据库存储和多API凭证轮询
 DATABASE_URL=postgresql://用户:密码@主机:端口/数据库名
 
-# API凭证配置（JSON格式 - 嵌套结构）
-# 按监控用户分组，减少配置冗余，每个用户可以有多个API凭证
+# Twitter API凭证配置（JSON格式）
 API_CREDENTIALS='[
   {
     "monitorUser": "binancezh",
@@ -146,7 +159,34 @@ MONITOR_END_TIME=23:00    # 生产环境监控结束时间（北京时间UTC+8�
 ```
 
 ### 数据库表结构
+
+> **注意**: Binance监控采用**无数据库设计**，公告数据直接推送钉钉，不存储到数据库。只有Twitter监控需要数据库支持。
+
+#### 统一监控系统表结构
 ```sql
+-- 模块管理表
+CREATE TABLE monitor_modules (
+    module_name VARCHAR(50) PRIMARY KEY,
+    status VARCHAR(20) DEFAULT 'stopped',
+    last_start_time TIMESTAMP,
+    last_stop_time TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 监控状态表（支持多模块）
+CREATE TABLE monitor_state (
+    id SERIAL PRIMARY KEY,
+    monitor_user VARCHAR(100) NOT NULL,
+    module_name VARCHAR(50) NOT NULL,
+    last_check_time TIMESTAMP,
+    last_update_time TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(monitor_user, module_name)
+);
+
+-- Twitter相关表
 -- 刷新令牌表
 CREATE TABLE refresh_tokens (
     username VARCHAR(50) PRIMARY KEY,
@@ -154,38 +194,72 @@ CREATE TABLE refresh_tokens (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- 监控状态表（整合了状态和统计信息）
-CREATE TABLE monitor_state (
-    monitor_user VARCHAR(50) PRIMARY KEY,
-    -- 状态信息
-    last_tweet_id VARCHAR(50),
-    last_check_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    -- 统计信息
-    total_tweets INTEGER DEFAULT 0,
-    success_count INTEGER DEFAULT 0,
-    error_count INTEGER DEFAULT 0,
-    rate_limit_hits INTEGER DEFAULT 0,
-    last_success_time TIMESTAMP,
-    -- 元数据
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+-- 推文存储表
+CREATE TABLE tweets (
+    id SERIAL PRIMARY KEY,
+    tweet_id VARCHAR(50) UNIQUE NOT NULL,
+    user_id VARCHAR(50),
+    username VARCHAR(100),
+    content TEXT,
+    created_at TIMESTAMP,
+    monitor_user VARCHAR(100),
+    url TEXT,
+    metrics JSONB,
+    inserted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- API使用统计表
-CREATE TABLE api_usage_stats (
-    credential_id VARCHAR(50) PRIMARY KEY,
-    daily_requests INTEGER DEFAULT 0,
-    last_request_time TIMESTAMP,
-    reset_date DATE DEFAULT CURRENT_DATE,
+-- Binance相关表
+-- 公告存储表
+CREATE TABLE binance_announcements (
+    id SERIAL PRIMARY KEY,
+    announcement_id VARCHAR(50) UNIQUE NOT NULL,
+    title TEXT,
+    content TEXT,
+    publish_time TIMESTAMP,
+    language VARCHAR(10),
+    catalog_id INTEGER,
+    catalog_name VARCHAR(100),
+    type VARCHAR(50),
+    priority INTEGER,
+    tags JSONB,
+    url TEXT,
+    raw_data JSONB,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
 ```
 
-## 核心算法
+## 核心工作流程
 
-### 智能时间调度算法
+### 系统启动流程
 
-#### 生产模式（NODE_ENV=production）
+```mermaid
+sequenceDiagram
+    participant Main as src/index.js
+    participant Orchestrator as MonitorOrchestrator
+    participant Config as UnifiedConfigManager
+    participant DB as UnifiedDatabaseManager
+    participant Twitter as TwitterMonitor
+    participant Binance as BinanceWebSocketMonitor
+
+    Main->>Config: 加载配置
+    Config->>Config: 检查模块开关
+    Main->>DB: 初始化数据库
+    Main->>Orchestrator: 创建编排器
+
+    Orchestrator->>Twitter: 加载Twitter模块 (如果启用)
+    Twitter->>Twitter: 初始化API客户端
+    Twitter->>Twitter: 创建调度器
+
+    Orchestrator->>Binance: 加载Binance模块 (如果启用)
+    Binance->>Binance: 建立WebSocket连接
+    Binance->>Binance: 订阅公告主题
+
+    Orchestrator->>Orchestrator: 启动健康检查
+    Main->>Main: 启动HTTP服务器
+```
+
+### Twitter监控工作流程
+
+#### 智能时间调度算法
 ```javascript
 // 每个API每天3次请求，总请求数 = API数量 × 3
 const totalRequests = apiCredentialCount * 3;
@@ -193,7 +267,7 @@ const totalRequests = apiCredentialCount * 3;
 // 固定开始和结束时间，中间均匀分配
 for (let i = 0; i < totalRequests; i++) {
     let timeMinutes;
-    
+
     if (i === 0) {
         // 第一次请求：开始时间
         timeMinutes = startMinutes;
@@ -205,7 +279,7 @@ for (let i = 0; i < totalRequests; i++) {
         const intervalMinutes = totalMinutes / (totalRequests - 1);
         timeMinutes = startMinutes + (i * intervalMinutes);
     }
-    
+
     scheduleTimes.push({
         hour: Math.floor(timeMinutes / 60),
         minute: Math.floor(timeMinutes % 60),
@@ -214,10 +288,38 @@ for (let i = 0; i < totalRequests; i++) {
 }
 ```
 
-**示例：**
+**调度示例：**
 - **1个API**：3次请求 → 09:00, 16:00, 23:00
 - **2个API**：6次请求 → 09:00, 11:48, 14:36, 17:24, 20:12, 23:00
 - **3个API**：9次请求 → 09:00, 10:45, 12:30, 14:15, 16:00, 17:45, 19:30, 21:15, 23:00
+
+### Binance监控工作流程
+
+#### WebSocket连接管理
+```javascript
+// 1. 生成签名
+const signatureString = `random=${random}&topic=${topic}&recvWindow=${recvWindow}&timestamp=${timestamp}`;
+const signature = crypto.createHmac('sha256', secretKey).update(signatureString).digest('hex');
+
+// 2. 建立连接
+const wsUrl = `wss://api.binance.com/sapi/wss?${signatureString}&signature=${signature}`;
+const ws = new WebSocket(wsUrl);
+
+// 3. 心跳机制
+setInterval(() => {
+    if (ws.readyState === WebSocket.OPEN) {
+        ws.ping();
+    }
+}, 30000);
+
+// 4. 消息处理
+ws.on('message', (data) => {
+    const message = JSON.parse(data);
+    if (message.type === 'DATA' && message.topic === 'com_announcement_en') {
+        processAnnouncement(message.data);
+    }
+});
+```
 
 #### 开发模式（NODE_ENV=development）
 ```javascript
@@ -236,64 +338,45 @@ for (let i = 0; i < apiCredentialCount; i++) {
 }
 ```
 
-### API凭证轮换算法
+### 通知系统工作流程
+
+#### 统一通知管理器
 ```javascript
-// 简单的轮换逻辑：按顺序使用下一个凭证
-function getNextCredential(credentials, currentIndex = -1) {
-    const nextIndex = (currentIndex + 1) % credentials.length;
-    return {
-        credential: credentials[nextIndex],
-        index: nextIndex
-    };
+class UnifiedNotifierManager {
+    async sendNotification(source, data) {
+        // 根据来源格式化消息
+        const message = this.formatMessage(source, data);
+
+        // 发送到钉钉
+        return await this.dingTalkNotifier.sendMessage(message);
+    }
+
+    formatMessage(source, data) {
+        switch (source) {
+            case 'twitter':
+                return this.formatTwitterMessage(data);
+            case 'binance':
+                return this.formatBinanceMessage(data);
+            default:
+                return data;
+        }
+    }
 }
 ```
 
-## 系统工作流程
+#### 消息格式化示例
+```javascript
+// Twitter消息格式
+{
+    title: "🐦 Twitter新推文",
+    content: `用户: @${username}\n内容: ${content}\n时间: ${created_at}\n链接: ${url}`
+}
 
-### 启动流程
-```mermaid
-flowchart TD
-    Start([系统启动]) --> LoadEnv[加载环境变量配置]
-    LoadEnv --> ParseConfig[解析JSON配置]
-    ParseConfig --> InitDB[初始化数据库连接]
-    
-    InitDB --> CheckDB{数据库连接成功?}
-    CheckDB -->|否| StopProgram[停止程序]
-    CheckDB -->|是| LoadTokens[从数据库加载refreshToken]
-    
-    LoadTokens --> CheckAuth[检查API凭证认证状态]
-    CheckAuth --> InitScheduler[初始化调度管理器]
-    InitScheduler --> CalcTime[计算监控时间点]
-    CalcTime --> CreateTasks[创建定时任务]
-    CreateTasks --> StartTasks[启动监控任务]
-    StartTasks --> HealthCheck[启动健康检查服务]
-    HealthCheck --> Ready([系统就绪])
-```
-
-### 监控执行流程
-```mermaid
-flowchart TD
-    Trigger([定时任务触发]) --> GetCredential[获取API凭证]
-    GetCredential --> LoadToken[从数据库获取refreshToken]
-    LoadToken --> CreateClient[创建XClient实例]
-    CreateClient --> GetTweets[调用getUserTweets获取推文]
-    
-    GetTweets --> APIError{API调用结果}
-    APIError -->|限流429| RotateCredential[轮换到下个凭证]
-    APIError -->|令牌失效401| RefreshToken[刷新token并保存到数据库]
-    APIError -->|其他错误| LogError[记录错误]
-    APIError -->|成功| CheckNewTweets{有新推文?}
-    
-    RotateCredential --> CreateClient
-    RefreshToken --> GetTweets
-    LogError --> UpdateStats[更新统计信息]
-    
-    CheckNewTweets -->|是| SaveTweets[保存推文到本地]
-    CheckNewTweets -->|否| UpdateStats
-    
-    SaveTweets --> SendNotification[发送钉钉通知]
-    SendNotification --> UpdateStats
-    UpdateStats --> Complete([任务完成])
+// Binance消息格式
+{
+    title: "📢 Binance公告",
+    content: `标题: ${title}\n分类: ${catalogName}\n时间: ${publishTime}\n链接: ${url}`
+}
 ```
 
 ## 环境管理
@@ -305,12 +388,10 @@ npm run dev
 
 # 自动设置的环境变量
 NODE_ENV=development
-TEST_MODE=true
-TEST_INTERVAL=1
 
 # 特点
-- 立即开始监控（当前时间+3秒）
-- 按TEST_INTERVAL间隔执行
+- Twitter监控：立即开始测试（当前时间+3秒）
+- Binance监控：立即建立WebSocket连接
 - 详细的调试日志
 - 支持热重载测试
 ```
@@ -324,24 +405,63 @@ npm start
 NODE_ENV=production
 
 # 特点
-- 使用固定的开始/结束时间
-- 每个API每天3次请求
+- Twitter监控：使用固定的开始/结束时间调度
+- Binance监控：24小时实时WebSocket连接
 - 优化的日志级别
-- 错误重试机制
+- 自动重连和错误重试机制
 ```
 
-## 预先认证系统
+## 模块管理系统
+
+### 模块控制
+```bash
+# 环境变量控制模块启用/禁用
+TWITTER_ENABLED=true   # 启用Twitter监控
+BINANCE_ENABLED=true   # 启用Binance监控
+
+# 可以独立控制
+TWITTER_ENABLED=false  # 只启用Binance监控
+BINANCE_ENABLED=true
+
+TWITTER_ENABLED=true   # 只启用Twitter监控
+BINANCE_ENABLED=false
+```
+
+### 模块生命周期管理
+```javascript
+class MonitorOrchestrator {
+    async loadModules() {
+        const enabledModules = this.config.getEnabledModules();
+
+        for (const moduleName of enabledModules) {
+            const module = await this.createModule(moduleName);
+            await module.initialize();
+            this.modules.set(moduleName, module);
+        }
+    }
+
+    async startHealthCheck() {
+        setInterval(() => {
+            for (const [name, module] of this.modules) {
+                if (!module.isHealthy()) {
+                    this.logger.warn(`模块 ${name} 不健康，尝试恢复`);
+                    this.recoverModule(name);
+                }
+            }
+        }, 30000);
+    }
+}
+```
+
+## Twitter认证系统（仅Twitter监控需要）
 
 ### 认证流程
 ```bash
-# 认证所有API凭证
+# 认证所有Twitter API凭证
 npm run auth
 
 # 检查认证状态
 npm run auth:check
-
-# 认证特定用户（如果支持）
-npm run auth:user <nickname>
 ```
 
 ### 认证工作原理
@@ -351,44 +471,58 @@ npm run auth:user <nickname>
 4. **Token保存** - 将获得的refreshToken保存到数据库
 5. **状态验证** - 验证认证是否成功
 
-## 数据库连接管理
+**注意**：Binance监控只需要API密钥，无需OAuth认证流程。
 
-### 按需重连机制
+## 统一数据库管理
 
-系统采用智能的按需重连策略，解决了PostgreSQL连接断开导致程序崩溃的问题。
+### UnifiedDatabaseManager
 
-#### 工作原理
+统一数据库管理器支持多监控源的数据存储，采用智能的按需重连策略。
+
+#### 核心特性
 
 ```javascript
-// 每次监控任务执行前检查数据库连接
-async function scheduledMonitorUser(nickname, credentialIndex) {
-    // 1. 首先确保数据库连接可用
-    if (!await databaseManager.ensureConnection()) {
-        console.log('数据库连接不可用，跳过本次监控');
-        return [];
-    }
-    
-    // 2. 执行监控逻辑
-    // ...
+class UnifiedDatabaseManager {
+    // 支持多种数据操作
+    async saveTweet(tweetData)              // Twitter推文存储
+    async saveBinanceAnnouncement(data)     // Binance公告存储
+    async updateMonitorState(user, module, state)  // 监控状态更新
+    async getMonitorState(user, module)     // 监控状态查询
+    async updateModuleStatus(module, status) // 模块状态管理
 }
+```
 
-// 智能连接检查和重连
-async function ensureConnection() {
-    // 如果连接正常，快速测试
-    if (this.isConnected && this.pool) {
+#### 智能重连机制
+
+```javascript
+// 每次数据库操作前自动检查连接
+async ensureConnection() {
+    if (this.isInitialized && this.pool) {
         try {
             const client = await this.pool.connect();
-            await client.query('SELECT 1');
+            await client.query('SELECT NOW()');
             client.release();
             return true;
         } catch (error) {
-            // 检测到连接异常，标记为断开
-            this.isConnected = false;
+            console.log('数据库连接异常，尝试重新初始化...');
+            return await this.initialize();
         }
     }
 
-    // 连接不可用，尝试重连
-    return await this.attemptReconnect();
+    return await this.initialize();
+}
+
+// 所有数据库操作都使用此模式
+async saveTweet(tweetData) {
+    if (!await this.ensureConnection()) return false;
+
+    try {
+        const result = await this.pool.query(query, values);
+        return result.rowCount > 0;
+    } catch (error) {
+        console.error('保存推文失败:', error.message);
+        return false;
+    }
 }
 ```
 
@@ -468,6 +602,8 @@ const poolConfig = {
 ## 错误处理策略
 
 ### 错误分类
+
+#### Twitter监控错误
 1. **认证错误**
    - OAuth2认证失败: 记录错误，跳过该凭证
    - 刷新令牌过期: 自动重新认证
@@ -478,10 +614,20 @@ const poolConfig = {
    - 认证错误(401): 重新认证凭证
    - 网络错误: 重试3次，指数退避
 
-3. **系统错误**
-   - 配置文件错误: 显示详细错误信息
-   - 数据库错误: 实现重连机制
+#### Binance监控错误
+1. **WebSocket连接错误**
+   - 连接失败: 自动重连机制，最多重试5次
+   - 认证失败(-1022): 检查API密钥和签名
+   - 网络断开: 立即尝试重连
+
+2. **数据处理错误**
+   - 消息解析失败: 记录原始数据，跳过该消息
    - 通知发送失败: 重试3次后记录失败
+
+#### 系统错误
+1. **配置错误**: 显示详细错误信息，停止相关模块
+2. **数据库错误**: 实现智能重连机制
+3. **模块健康检查失败**: 自动重启不健康的模块
 
 ### 重试机制
 ```javascript
@@ -541,31 +687,77 @@ async function executeWithRetry(taskId, callback) {
 - **定期轮转** - 自动清理过期日志文件
 
 ### 健康检查
+
+#### HTTP健康检查端点
 ```javascript
-// HTTP健康检查端点
+// 基础健康状态
 GET /health
 {
   "status": "healthy",
   "uptime": 3600000,
-  "monitoring": {
-    "isRunning": true,
-    "totalUsers": 1,
-    "activeClients": 1
+  "timestamp": "2025-08-04T12:00:00.000Z"
+}
+
+// 详细系统状态
+GET /status
+{
+  "system": {
+    "status": "healthy",
+    "uptime": 3600000,
+    "startTime": "2025-08-04T11:00:00.000Z"
   },
-  "authentication": {
-    "totalCredentials": 1,
-    "validCredentials": 1
+  "modules": {
+    "twitter": {
+      "enabled": true,
+      "status": "running",
+      "isHealthy": true,
+      "activeClients": 4,
+      "totalUsers": 2,
+      "lastCheck": "2025-08-04T11:59:00.000Z"
+    },
+    "binance": {
+      "enabled": true,
+      "status": "running",
+      "isHealthy": true,
+      "isConnected": true,
+      "connectionTime": "2025-08-04T11:00:05.000Z",
+      "messagesReceived": 15,
+      "lastHeartbeat": "2025-08-04T11:59:30.000Z"
+    }
   },
-  "timestamp": "2024-01-01T12:00:00.000Z"
+  "database": {
+    "connected": true,
+    "poolSize": 5,
+    "activeConnections": 2
+  },
+  "notifications": {
+    "dingTalk": {
+      "configured": true,
+      "lastSent": "2025-08-04T11:58:00.000Z"
+    }
+  }
 }
 ```
 
 ### 性能指标
-- API调用成功率
-- 平均响应时间
+
+#### Twitter监控指标
+- API调用成功率和限流状态
+- 推文获取统计和去重率
+- 凭证轮换频率
+- 认证状态和token有效性
+
+#### Binance监控指标
+- WebSocket连接稳定性
+- 消息接收和处理统计
+- 重连次数和成功率
+- 心跳响应时间
+
+#### 系统整体指标
 - 内存和CPU使用率
-- 推文获取统计
-- 错误率和重试次数
+- 数据库连接池状态
+- 通知发送成功率
+- 错误率和重试统计
 
 ## 安全考虑
 
@@ -645,25 +837,34 @@ GET /health
 
 ### 常用命令
 ```bash
-# 开发和测试
-npm run dev          # 开发模式启动
-npm run test         # 运行系统测试
-npm run verify       # 验证部署
-
-# 认证管理
-npm run auth         # 认证所有凭证
-npm run auth:check   # 检查认证状态
-
 # 生产部署
 npm start            # 生产模式启动
+
+# 开发模式
+npm run dev          # 开发模式启动（测试间隔1分钟）
+
+# Twitter认证管理（仅Twitter监控需要）
+npm run auth         # 认证所有Twitter凭证
+npm run auth:check   # 检查Twitter认证状态
 ```
 
 ### 配置示例
 ```bash
-# .env文件示例
+# .env文件示例 - 多源监控配置
+# 模块控制
+TWITTER_ENABLED=true
+BINANCE_ENABLED=true
+
+# 通知配置
 DINGTALK_ACCESS_TOKEN=your_dingtalk_token
+
+# Binance监控配置
+BINANCE_API_KEY=your_binance_api_key
+BINANCE_SECRET_KEY=your_binance_secret_key
+
+# Twitter监控配置
 DATABASE_URL=postgresql://user:pass@host:port/db
-API_CREDENTIALS=[
+API_CREDENTIALS='[
   {
     "monitorUser": "binancezh",
     "credentials": [
@@ -677,7 +878,7 @@ API_CREDENTIALS=[
       }
     ]
   }
-]
+]'
 MONITOR_START_TIME=09:00  # 北京时间UTC+8
 MONITOR_END_TIME=23:00    # 北京时间UTC+8
 ```
@@ -686,25 +887,43 @@ MONITOR_END_TIME=23:00    # 北京时间UTC+8
 
 ### 常见问题
 
+#### Twitter监控问题
 1. **认证失败**
    - 检查API凭证配置是否正确
    - 确认指纹浏览器ID有效
    - 验证代理连接是否正常
 
-2. **数据库连接失败**
-   - 检查DATABASE_URL格式
-   - 确认数据库服务是否运行
-   - 验证网络连接和防火墙设置
-
-3. **监控不执行**
+2. **监控不执行**
    - 检查时间调度配置
    - 确认API凭证已认证
    - 查看系统日志错误信息
 
-4. **钉钉通知失败**
+#### Binance监控问题
+1. **WebSocket连接失败**
+   - 检查BINANCE_API_KEY和BINANCE_SECRET_KEY
+   - 验证网络连接到api.binance.com
+   - 确认API密钥权限设置
+
+2. **签名验证失败(-1022)**
+   - 检查系统时间同步
+   - 验证API密钥格式
+   - 确认密钥权限包含"现货与杠杆交易"
+
+#### 系统通用问题
+1. **数据库连接失败**
+   - 检查DATABASE_URL格式
+   - 确认数据库服务是否运行
+   - 验证网络连接和防火墙设置
+
+2. **钉钉通知失败**
    - 验证DINGTALK_ACCESS_TOKEN
    - 检查网络连接
    - 确认钉钉机器人配置
+
+3. **模块启动失败**
+   - 检查模块开关配置（TWITTER_ENABLED/BINANCE_ENABLED）
+   - 查看具体模块的错误日志
+   - 验证相关配置是否完整
 
 ### 调试技巧
 ```bash
@@ -965,30 +1184,50 @@ const nodeEnv = process.env.NODE_ENV || 'development';
 
 ## 项目结构
 ```
-twitter-multi-user-monitor/
+multi-source-monitor/
 ├── src/
-│   ├── index.js          # 主程序入口
-│   ├── config.js         # 配置管理器
-│   ├── database.js       # 数据库管理器
-│   ├── scheduler.js      # 调度管理器
-│   ├── monitor.js        # 监控管理器
-│   ├── x.js             # Twitter API客户端
-│   ├── bitbrowser.js    # 指纹浏览器集成
-│   └── notifier.js      # 钉钉通知器
+│   ├── index.js                    # 主程序入口
+│   ├── orchestrator.js             # 监控编排器
+│   ├── core/
+│   │   ├── config.js              # 统一配置管理器
+│   │   ├── database.js            # 统一数据库管理器
+│   │   └── notifier.js            # 统一通知管理器
+│   └── monitors/
+│       ├── index.js               # 监控模块统一入口
+│       ├── base/
+│       │   └── BaseMonitor.js     # 监控基类
+│       ├── twitter/
+│       │   ├── TwitterMonitor.js          # Twitter监控器
+│       │   ├── TwitterApiClient.js       # Twitter API客户端
+│       │   ├── TwitterScheduler.js       # Twitter调度器
+│       │   ├── TwitterConfig.js          # Twitter配置管理
+│       │   └── TwitterAuthenticator.js   # Twitter认证工具
+│       └── binance/
+│           └── BinanceWebSocketMonitor.js # Binance WebSocket监控器
 ├── tools/
-│   ├── authenticate.js   # 认证工具
-│   └── migrate_database.js # 数据库迁移工具
+│   └── authenticate.js            # Twitter认证工具
 ├── tests/
-│   └── *.js             # 测试文件
-├── data/                # 数据存储目录
-├── .env                 # 环境变量配置
-├── package.json         # 项目配置
-└── railway.json         # Railway部署配置
+│   └── *.js                      # 测试文件
+├── data/                         # 数据存储目录
+├── .env                          # 环境变量配置
+├── package.json                  # 项目配置
+├── README.md                     # 项目说明
+└── TECHNICAL_DOCUMENTATION.md   # 技术文档
 ```
 
 ## 版本历史
 
-### v2.0.0 (当前版本)
+### v3.0.0 (当前版本) - 多源监控架构
+- ✅ **多源监控支持** - Twitter + Binance双监控源
+- ✅ **模块化架构** - 基于BaseMonitor的可扩展架构
+- ✅ **统一编排器** - MonitorOrchestrator统一管理所有监控模块
+- ✅ **实时WebSocket监控** - Binance公告实时推送
+- ✅ **模块独立控制** - 可独立启用/禁用各监控模块
+- ✅ **统一通知系统** - 支持多源消息格式化和推送
+- ✅ **健康检查机制** - 自动监控模块健康状态和恢复
+- ✅ **智能重连机制** - WebSocket和数据库自动重连
+
+### v2.0.0 (历史版本) - Twitter单一监控
 - ✅ 完全基于环境变量的配置管理
 - ✅ 预先认证系统
 - ✅ 智能时间调度算法
@@ -1022,54 +1261,29 @@ twitter-multi-user-monitor/
 
 ---
 
-*最后更新: 2024年1月*
-## 已知
-问题和解决方案
+*最后更新: 2025年8月*
 
-### 1. 数据库连接断开问题
-**问题**: Railway免费版PostgreSQL连接可能在空闲时断开
-**解决方案**: 实现按需重连机制，每次监控前检查连接状态
+## 技术栈
 
-### 2. 重复推文推送问题 ⭐ 重要修复
-**问题**: Twitter API的`start_time`参数是包含性的，使用推文的`created_at`时间作为下次查询的起始时间会导致重复获取同一条推文
+### 核心技术
+- **运行时**: Node.js 18+
+- **数据库**: PostgreSQL (Supabase)
+- **部署平台**: Railway
 
-**根本原因**: 
-- 系统使用最新推文的`createdAt`时间作为`lastCheckTime`
-- Twitter API的`start_time`参数包含指定时间点的推文
-- 导致同一条推文在多次监控中被重复获取和推送
+### Twitter监控技术栈
+- **API**: Twitter API v2
+- **任务调度**: node-cron
+- **浏览器自动化**: playwright
+- **代理支持**: socks-proxy-agent
 
-**解决方案**: 
-1. **时间偏移机制**: 在最新推文时间基础上加1毫秒作为下次查询的起始时间
-2. **客户端过滤**: 在X客户端中添加额外的时间过滤，确保只返回真正新于`lastCheckTime`的推文
-3. **双重保障**: 两种机制同时工作，确保即使一种失效也不会出现重复推送
+### Binance监控技术栈
+- **API**: Binance WebSocket API
+- **WebSocket客户端**: ws
+- **签名算法**: HMAC SHA256
+- **实时连接**: 24小时持久连接
 
-**修复代码**:
-```javascript
-// monitor.js - 时间偏移机制
-const nextCheckTime = new Date(new Date(latestTweet.createdAt).getTime() + 1).toISOString();
-await this.updateLastCheckTime(nickname, nextCheckTime);
-
-// x.js - 客户端过滤
-if (lastCheckTime) {
-    const checkTimeMs = new Date(lastCheckTime).getTime();
-    filteredTweets = formattedTweets.filter(tweet => {
-        const tweetTimeMs = new Date(tweet.createdAt).getTime();
-        return tweetTimeMs > checkTimeMs;
-    });
-}
-```
-
-**验证结果**: 
-- 时间偏移测试: ✅ 通过
-- 客户端过滤测试: ✅ 通过
-- 重复推文问题: ✅ 已解决
-
----
-
-## 版本历史
-
-### v1.2.0 - 重复推文修复版本
-- 🐛 修复Twitter API start_time包含性导致的重复推文推送问题
-- ✨ 实现时间偏移机制（+1毫秒）
-- ✨ 添加客户端推文时间过滤
-- 🔧 优化监控逻辑，提高推文去重准确性
+### 通用技术
+- **HTTP客户端**: axios
+- **环境管理**: dotenv
+- **日志系统**: 结构化日志
+- **通知系统**: 钉钉Webhook

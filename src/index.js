@@ -1,78 +1,77 @@
-import { twitterMonitor } from './monitor.js';
-import { configManager } from './config.js';
-import { databaseManager } from './database.js';
-import { TimeUtils } from './timeUtils.js';
+import { MonitorOrchestrator } from './orchestrator.js';
+import { unifiedConfigManager } from './core/config.js';
+import { unifiedDatabaseManager } from './core/database.js';
+import { createUnifiedNotifier } from './core/notifier.js';
+import { unifiedLoggerManager } from './core/logger.js';
 import http from 'http';
 
 /**
- * Twitter多用户监控系统主程序
+ * 多监控源系统主程序
  */
-class TwitterMonitorApp {
+class MultiSourceMonitorApp {
     constructor() {
         this.isRunning = false;
         this.startTime = null;
         this.httpServer = null;
+        this.orchestrator = null;
+        this.sharedServices = {};
 
         // 使用UTC时间
         process.env.TZ = 'UTC';
     }
 
     /**
-     * 获取当前UTC时间
-     * @returns {Date} UTC时间的Date对象
+     * 初始化共享服务
+     * @returns {Promise<boolean>} 是否初始化成功
      */
-    getCurrentUTCTime() {
-        return new Date();
-    }
-
-    /**
-     * 检查API凭证认证状态
-     * @param {Object} config - 配置对象
-     * @returns {Promise<Object>} 认证状态检查结果
-     */
-    async checkAuthenticationStatus(config) {
-        const result = {
-            allAuthenticated: true,
-            authenticatedCount: 0,
-            totalCount: 0,
-            unauthenticatedCredentials: []
-        };
-
+    async initializeSharedServices() {
         try {
-            // 收集所有凭证
-            const allCredentials = [];
-            for (const user of config.monitoredUsers) {
-                for (const credential of user.apiCredentials) {
-                    allCredentials.push({
-                        ...credential,
-                        monitorUser: user.xMonitorNickName
-                    });
+            console.log('🔧 初始化共享服务...');
+
+            // 1. 初始化配置管理器
+            console.log('📋 加载统一配置...');
+            const config = unifiedConfigManager.loadConfig();
+            if (!config) {
+                throw new Error('配置加载失败');
+            }
+            this.sharedServices.config = unifiedConfigManager;
+            console.log(`✅ 配置加载成功，启用模块: ${config.system.enabledModules.join(', ')}`);
+
+            // 2. 初始化数据库管理器（仅Twitter监控需要）
+            if (config.system.enabledModules.includes('twitter')) {
+                console.log('🗄️  初始化数据库连接...');
+                const dbSuccess = await unifiedDatabaseManager.initialize(config.shared.database);
+                if (!dbSuccess) {
+                    throw new Error('数据库初始化失败');
                 }
+                this.sharedServices.database = unifiedDatabaseManager;
+                console.log('✅ 数据库连接成功');
+            } else {
+                console.log('ℹ️  跳过数据库初始化（仅Binance监控运行，无需数据库）');
+                this.sharedServices.database = null;
             }
 
-            result.totalCount = allCredentials.length;
-
-            // 检查每个凭证的认证状态
-            for (const credential of allCredentials) {
-                const refreshToken = await databaseManager.getRefreshToken(credential.xUserName);
-
-                if (refreshToken) {
-                    result.authenticatedCount++;
-                } else {
-                    result.allAuthenticated = false;
-                    result.unauthenticatedCredentials.push({
-                        id: credential.xUserName,
-                        monitorUser: credential.monitorUser
-                    });
-                }
+            // 3. 初始化通知管理器
+            console.log('📢 初始化通知系统...');
+            const notifier = createUnifiedNotifier(config.shared.notification);
+            // 只有在数据库初始化时才设置数据库管理器
+            if (this.sharedServices.database) {
+                notifier.setDatabaseManager(this.sharedServices.database);
             }
+            this.sharedServices.notifier = notifier;
+            console.log('✅ 通知系统初始化成功');
 
-            return result;
+            // 4. 初始化日志管理器
+            console.log('📝 初始化日志系统...');
+            unifiedLoggerManager.setLogLevel(config.shared.logging.level);
+            this.sharedServices.logger = unifiedLoggerManager;
+            console.log('✅ 日志系统初始化成功');
+
+            return true;
 
         } catch (error) {
-            console.error('检查认证状态时出错:', error.message);
-            result.allAuthenticated = false;
-            return result;
+            console.error('❌ 共享服务初始化失败:', error.message);
+            return false;
         }
     }
 
@@ -81,105 +80,33 @@ class TwitterMonitorApp {
      */
     async start() {
         try {
-            console.log('🚀 Twitter多用户监控系统启动中...');
+            console.log('🚀 多监控源系统启动中...');
             this.startTime = new Date();
 
-            // 1. 初始化数据库连接
-            console.log('🗄️  初始化数据库连接...');
-            const dbSuccess = await databaseManager.initialize();
-            if (!dbSuccess) {
-                throw new Error('数据库初始化失败');
-            }
-            console.log('✅ 数据库连接成功');
-
-            // 2. 加载环境变量配置
-            console.log('📋 加载环境变量配置...');
-            const config = configManager.loadConfig();
-            if (!config) {
-                throw new Error('环境变量配置加载失败');
-            }
-            console.log(`✅ 配置加载成功，监控用户数: ${config.monitoredUsers?.length || 0}`);
-
-            // 3. 检查钉钉配置
-            if (!config.dingtalkAccessToken) {
-                console.warn('⚠️  未配置钉钉访问令牌，将无法发送通知');
-            } else {
-                console.log('✅ 钉钉通知配置已就绪');
+            // 1. 初始化共享服务
+            const servicesInitialized = await this.initializeSharedServices();
+            if (!servicesInitialized) {
+                throw new Error('共享服务初始化失败');
             }
 
-            // 4. 检查API凭证认证状态
-            console.log('🔐 检查API凭证认证状态...');
-            if (config.monitoredUsers.length === 0) {
-                console.error('❌ 系统启动失败：没有配置任何监控用户');
-                process.exit(1);
-            }
+            // 2. 创建监控编排器
+            console.log('🎭 创建监控编排器...');
+            this.orchestrator = new MonitorOrchestrator(this.sharedServices);
 
-            // 检查认证状态
-            const authCheckResult = await this.checkAuthenticationStatus(config);
-            if (!authCheckResult.allAuthenticated) {
-                console.warn('⚠️  部分API凭证未认证，可能影响监控功能');
-                console.warn('💡 建议运行以下命令完成认证:');
-                console.warn('   - 认证所有凭证: npm run auth');
-                console.warn('   - 检查认证状态: npm run auth:check');
-
-                // 显示未认证的凭证详情
-                if (authCheckResult.unauthenticatedCredentials.length > 0) {
-                    console.warn('📋 未认证的凭证:');
-                    authCheckResult.unauthenticatedCredentials.forEach(cred => {
-                        console.warn(`   - ${cred.id} (${cred.monitorUser})`);
-                    });
-                }
-
-                // 在生产环境中，如果没有任何认证凭证则停止启动
-                if (authCheckResult.authenticatedCount === 0) {
-                    console.error('❌ 系统启动失败：没有任何已认证的API凭证');
-                    console.error('💡 请先运行 npm run auth 完成认证');
-                    process.exit(1);
-                }
-            } else {
-                console.log('✅ 所有API凭证认证状态正常');
-            }
-
-            // 4. 初始化调度监控
-            console.log('⏰ 初始化调度监控系统...');
-
-            // 从配置文件读取监控设置
-            const settings = config.monitorSettings || {};
-            const testMode = settings.testMode || false;
-            const startTime = settings.startTime || "09:00";
-            const endTime = settings.endTime || "00:00";
-            const testIntervalMinutes = settings.testIntervalMinutes || 2;
-
-            if (testMode) {
-                // 获取当前UTC时间用于显示
-                const utcTime = this.getCurrentUTCTime();
-                const utcTimeStr = utcTime.toISOString();
-                console.log(`🧪 测试模式启用 - 从当前UTC时间 ${utcTimeStr} 开始，每${testIntervalMinutes}分钟监控一次`);
-            } else {
-                const startTimeUTC8 = settings.startTimeUTC8 || "09:00";
-                const endTimeUTC8 = settings.endTimeUTC8 || "23:00";
-                console.log(`⏰ 监控时间: ${startTimeUTC8} - ${endTimeUTC8} (北京时间UTC+8)`);
-                console.log(`   转换为UTC: ${startTime} - ${endTime === "00:00" ? '24:00' : endTime}`);
-            }
-
-            const initSuccess = twitterMonitor.initializeScheduledMonitoring();
-            if (!initSuccess) {
-                throw new Error('调度监控系统初始化失败');
-            }
-            console.log('✅ 调度监控系统初始化成功');
-
-            // 5. 启动监控
-            console.log('🎯 启动监控任务...');
-            const startSuccess = twitterMonitor.startScheduledMonitoring();
-            if (!startSuccess) {
-                throw new Error('监控任务启动失败');
+            // 3. 启动监控编排器
+            console.log('🎯 启动监控编排器...');
+            const orchestratorStarted = await this.orchestrator.start();
+            if (!orchestratorStarted) {
+                throw new Error('监控编排器启动失败');
             }
 
             this.isRunning = true;
-            console.log('🎉 Twitter多用户监控系统启动成功！');
+            console.log('🎉 多监控源系统启动成功！');
 
-            // 显示系统状态
-            await this.showSystemStatus();
+            // 延迟显示系统状态，让模块有时间完全启动
+            setTimeout(async () => {
+                await this.showSystemStatus();
+            }, 3000); // 3秒后显示状态
 
             // 设置定期状态报告
             this.setupStatusReporting();
@@ -225,10 +152,7 @@ class TwitterMonitorApp {
             } else if (req.method === 'GET' && req.url === '/status') {
                 // 详细状态端点
                 try {
-                    const monitorStatus = twitterMonitor.getMonitorStatus();
-                    const authStatus = await twitterMonitor.getAuthenticationStatus();
-                    const storageStats = twitterMonitor.getStorageStats();
-                    const todayStats = twitterMonitor.getTodayStats();
+                    const systemStatus = this.orchestrator ? this.orchestrator.getSystemStatus() : null;
 
                     const detailedStatus = {
                         system: {
@@ -236,10 +160,7 @@ class TwitterMonitorApp {
                             uptime: this.startTime ? Date.now() - this.startTime.getTime() : 0,
                             startTime: this.startTime?.toISOString()
                         },
-                        monitoring: monitorStatus,
-                        authentication: authStatus,
-                        storage: storageStats,
-                        todayStats: todayStats,
+                        orchestrator: systemStatus,
                         timestamp: new Date().toISOString()
                     };
 
@@ -268,7 +189,18 @@ class TwitterMonitorApp {
         });
 
         this.httpServer.on('error', (error) => {
-            console.error('HTTP服务器错误:', error.message);
+            if (error.code === 'EADDRINUSE') {
+                console.warn(`⚠️  端口 ${port} 被占用，尝试使用其他端口...`);
+                // 尝试使用随机端口
+                this.httpServer.listen(0, () => {
+                    const actualPort = this.httpServer.address().port;
+                    console.log(`🌐 HTTP健康检查服务器启动，端口: ${actualPort}`);
+                    console.log(`   健康检查: http://localhost:${actualPort}/health`);
+                    console.log(`   详细状态: http://localhost:${actualPort}/status`);
+                });
+            } else {
+                console.error('❌ HTTP服务器错误:', error.message);
+            }
         });
     }
 
@@ -280,44 +212,38 @@ class TwitterMonitorApp {
             console.log('\n📊 系统状态报告:');
             console.log('================');
 
-            // 监控状态
-            const monitorStatus = twitterMonitor.getMonitorStatus();
-            console.log(`监控状态: ${monitorStatus.isMonitoring ? '✅ 运行中' : '❌ 已停止'}`);
-            console.log(`监控用户: ${monitorStatus.totalUsers} 个`);
-            console.log(`活跃客户端: ${monitorStatus.activeClients} 个`);
+            if (this.orchestrator) {
+                const systemStatus = this.orchestrator.getSystemStatus();
+                
+                // 编排器状态
+                console.log(`编排器状态: ${systemStatus.orchestrator.isRunning ? '✅ 运行中' : '❌ 已停止'}`);
+                console.log(`总模块数: ${systemStatus.orchestrator.totalModules} 个`);
+                console.log(`运行中模块: ${systemStatus.orchestrator.runningModules} 个`);
 
-            // 调度状态
-            const scheduleStatus = twitterMonitor.scheduleManager?.getScheduleStatus();
-            if (scheduleStatus) {
-                console.log(`⏰ 调度任务: ${scheduleStatus.isRunning ? '✅ 运行中' : '❌ 已停止'}`);
+                // 各模块状态
+                if (systemStatus.modules) {
+                    Object.entries(systemStatus.modules).forEach(([moduleName, moduleStatus]) => {
+                        console.log(`\n📦 模块 ${moduleName}:`);
+                        console.log(`  状态: ${moduleStatus.status === 'running' ? '✅ 运行中' : '❌ 已停止'}`);
+                        console.log(`  健康: ${moduleStatus.isHealthy ? '✅ 健康' : '❌ 不健康'}`);
+                        console.log(`  运行时间: ${moduleStatus.uptimeFormatted || '未知'}`);
+                        
+                        if (moduleStatus.statistics) {
+                            console.log(`  处理总数: ${moduleStatus.statistics.totalProcessed}`);
+                            console.log(`  成功率: ${moduleStatus.statistics.successRate || '0%'}`);
+                        }
+                    });
+                }
 
-                // 显示每个用户的调度信息和下次触发时间
-                Object.entries(scheduleStatus.users).forEach(([nickname, userInfo]) => {
-                    console.log(`  - ${nickname}: ${userInfo.taskCount} 个时间点`);
-                    
-                    // 获取下次执行信息
-                    const nextExecution = twitterMonitor.scheduleManager?.getNextExecutionInfo(nickname);
-                    if (nextExecution) {
-                        const remainingTime = TimeUtils.formatRemainingTime(nextExecution.minutesUntil);
-                        console.log(`      ⏱️ 下次执行: ${nextExecution.utc8Time} (UTC+8), 倒计时: ${remainingTime}`);
-                    }
-                });
-            }
-
-            // 认证状态
-            const authStatus = await twitterMonitor.getAuthenticationStatus();
-            if (authStatus) {
-                console.log(`API凭证: ${authStatus.totalCredentials} 个`);
-                Object.entries(authStatus.userStatus).forEach(([nickname, userAuth]) => {
-                    const validRatio = `${userAuth.validCredentials}/${userAuth.totalCredentials}`;
-                    console.log(`  - ${nickname}: ${validRatio} 个有效凭证`);
-                });
-            }
-
-            // 存储状态
-            const storageStats = twitterMonitor.getStorageStats();
-            if (storageStats) {
-                console.log(`数据存储: ${storageStats.totalFiles} 个文件, ${storageStats.totalSizeFormatted}`);
+                // 共享服务状态
+                const sharedStatus = systemStatus.sharedServices;
+                console.log(`\n🔧 共享服务:`);
+                console.log(`  配置管理: ${sharedStatus.config.isLoaded ? '✅' : '❌'}`);
+                console.log(`  数据库: ${sharedStatus.database.isHealthy ? '✅' : '❌'}`);
+                console.log(`  通知系统: ${sharedStatus.notifier.isAvailable ? '✅' : '❌'}`);
+                console.log(`  日志系统: ${sharedStatus.logger.isAvailable ? '✅' : '❌'}`);
+            } else {
+                console.log('编排器未初始化');
             }
 
             console.log('================\n');
@@ -334,18 +260,9 @@ class TwitterMonitorApp {
         // 每小时显示一次状态
         setInterval(async () => {
             if (this.isRunning) {
-                const utcTime = this.getCurrentUTCTime();
+                const utcTime = new Date();
                 console.log(`\n⏰ 定期状态报告 - ${utcTime.toISOString()}`);
                 await this.showSystemStatus();
-
-                // 显示今日统计
-                const todayStats = twitterMonitor.getTodayStats();
-                if (todayStats.totalTweets > 0) {
-                    console.log(`📈 今日推文统计: ${todayStats.totalTweets} 条`);
-                    Object.entries(todayStats.userBreakdown).forEach(([nickname, count]) => {
-                        console.log(`  - ${nickname}: ${count} 条`);
-                    });
-                }
             }
         }, 60 * 60 * 1000); // 1小时
 
@@ -353,7 +270,8 @@ class TwitterMonitorApp {
         setInterval(() => {
             if (this.isRunning) {
                 console.log('🧹 执行数据清理任务...');
-                twitterMonitor.cleanupOldData(30); // 保留30天
+                // 清理日志文件
+                this.sharedServices.logger?.cleanupOldLogs(30);
             }
         }, 24 * 60 * 60 * 1000); // 24小时
     }
@@ -374,13 +292,11 @@ class TwitterMonitorApp {
                     this.httpServer.close();
                 }
 
-                // 停止监控
-                console.log('⏹️  停止监控任务...');
-                twitterMonitor.stopScheduledMonitoring();
-
-                // 保存数据
-                console.log('💾 保存数据...');
-                twitterMonitor.saveDataToFile();
+                // 停止监控编排器
+                if (this.orchestrator) {
+                    console.log('⏹️  停止监控编排器...');
+                    await this.orchestrator.stop();
+                }
 
                 // 显示运行统计
                 const runTime = Date.now() - this.startTime.getTime();
@@ -466,27 +382,17 @@ class TwitterMonitorApp {
      */
     async getHealthStatus() {
         try {
-            const monitorStatus = twitterMonitor.getMonitorStatus();
-            const authStatus = await twitterMonitor.getAuthenticationStatus();
-            const storageStats = twitterMonitor.getStorageStats();
+            const systemStatus = this.orchestrator ? this.orchestrator.getSystemStatus() : null;
 
             return {
-                status: this.isRunning && monitorStatus.isMonitoring ? 'healthy' : 'unhealthy',
+                status: this.isRunning && systemStatus?.orchestrator.isRunning ? 'healthy' : 'unhealthy',
                 uptime: this.startTime ? Date.now() - this.startTime.getTime() : 0,
-                monitoring: {
-                    isRunning: monitorStatus.isMonitoring,
-                    totalUsers: monitorStatus.totalUsers,
-                    activeClients: monitorStatus.activeClients
+                orchestrator: {
+                    isRunning: systemStatus?.orchestrator.isRunning || false,
+                    totalModules: systemStatus?.orchestrator.totalModules || 0,
+                    runningModules: systemStatus?.orchestrator.runningModules || 0
                 },
-                authentication: {
-                    totalCredentials: authStatus?.totalCredentials || 0,
-                    validCredentials: Object.values(authStatus?.userStatus || {})
-                        .reduce((sum, user) => sum + user.validCredentials, 0)
-                },
-                storage: {
-                    totalFiles: storageStats?.totalFiles || 0,
-                    totalSize: storageStats?.totalSize || 0
-                },
+                sharedServices: systemStatus?.sharedServices || {},
                 timestamp: new Date().toISOString()
             };
         } catch (error) {
@@ -500,7 +406,7 @@ class TwitterMonitorApp {
 }
 
 // 创建应用实例
-const app = new TwitterMonitorApp();
+const app = new MultiSourceMonitorApp();
 
 // 如果直接运行此文件，启动应用
 if (import.meta.url === `file://${process.argv[1]}`) {
@@ -511,4 +417,4 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 }
 
 // 导出应用实例供其他模块使用
-export { app as twitterMonitorApp };
+export { app as multiSourceMonitorApp };

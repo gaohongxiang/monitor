@@ -1,11 +1,14 @@
+/**
+ * Twitter API客户端
+ * 处理Twitter API的认证和数据获取
+ * 基于原有的x.js重构而来，整合了OAuth2认证和API调用功能
+ */
 import { TwitterApi } from 'twitter-api-v2';
 import { SocksProxyAgent } from 'socks-proxy-agent';
-import { BitBrowserUtil } from './bitbrowser.js';
-// import { notificationManager } from '../../notification-module/notification.js';
-import { configManager } from './config.js';
+import { BitBrowser } from './BitBrowser.js';
 
 /**
- *  X OAuth2认证工具类
+ * X OAuth2认证工具类
  * 用于处理X的OAuth2.0认证流程，获取和管理refresh token
  */
 export class XAuthenticator {
@@ -35,10 +38,10 @@ export class XAuthenticator {
      * @throws {Error} 缺少必要的配置时抛出错误
      */
     static async create({ xClientId, xClientSecret, browserId, socksProxyUrl }) {
-        // 3. 使用共享的浏览器工具创建函数
-        const browserUtil = await BitBrowserUtil.create({ browserId });
+        // 使用共享的浏览器工具创建函数
+        const browserUtil = await BitBrowser.create({ browserId });
 
-        // 4. 初始化API客户端
+        // 初始化API客户端
         const proxy = new SocksProxyAgent(socksProxyUrl);
         const client = new TwitterApi({
             clientId: xClientId,
@@ -46,9 +49,8 @@ export class XAuthenticator {
             httpAgent: proxy
         });
 
-        // 5. 创建XAuthenticator实例
+        // 创建XAuthenticator实例
         const instance = new XAuthenticator(browserUtil, proxy, client);
-        // 凭证信息将在后续通过外部设置
 
         return instance;
     }
@@ -57,13 +59,15 @@ export class XAuthenticator {
      * 执行OAuth2授权流程并保存refresh token
      * @param {Object} params - 授权参数
      * @param {string} params.xUserName - X用户名
+     * @param {string} params.xRedirectUri - 重定向URI
+     * @param {Object} database - 数据库管理器
      * @returns {Promise<boolean>} 是否授权成功
      */
-    async authorizeAndSaveToken({ xUserName }) {
+    async authorizeAndSaveToken({ xUserName, xRedirectUri }, database) {
         try {
             // 获取授权URL
-            const { url, codeVerifier, state } = this.client.generateOAuth2AuthLink(
-                this.credential.xRedirectUri,
+            const { url, codeVerifier } = this.client.generateOAuth2AuthLink(
+                xRedirectUri,
                 {
                     scope: [
                         'offline.access',
@@ -92,13 +96,14 @@ export class XAuthenticator {
             const { refreshToken } = await this.client.loginWithOAuth2({
                 code,
                 codeVerifier,
-                redirectUri: this.credential.xRedirectUri
+                redirectUri: xRedirectUri
             });
 
-            // 直接保存 refresh token 到数据库
-            const { databaseManager } = await import('./database.js');
-            await databaseManager.saveRefreshToken(xUserName, refreshToken);
+            // 保存 refresh token 到数据库
+            await database.saveRefreshToken(xUserName, refreshToken);
             console.log(`✅ refreshToken已保存到数据库 [用户: ${xUserName}]`);
+
+            return true;
 
         } catch (error) {
             console.error('X OAuth2授权失败:', error);
@@ -108,80 +113,89 @@ export class XAuthenticator {
 }
 
 /**
- * X API客户端类
- * 用于调用 X API执行各种操作，如发推、关注等
+ * Twitter API客户端类
+ * 用于调用 Twitter API执行各种操作，如获取推文、发推、关注等
+ * 整合了原有x.js中的XClient功能
  */
-export class XClient {
+export class TwitterApiClient {
+    constructor(credentials, database) {
+        this.credentials = credentials;
+        this.database = database;
+        this.client = null;
+        this.proxy = null;
+        this.isInitialized = false;
+        this.lastRequestTime = 0;
+        this.requestCount = 0;
+        this.dailyRequestLimit = credentials.dailyRequestsPerApi || 3;
+        this.cachedUserInfo = null; // 缓存用户信息，避免重复API请求
+    }
+
     /**
-     * 创建并初始化XClient实例
-     * @static
-     * @param {Object} params - 初始化参数
-     * @param {string} params.xClientId - 客户端ID
-     * @param {string} params.xClientSecret - 客户端密钥
-     * @param {string} params.refreshToken - 刷新令牌（可选，如果不提供则从数据库读取）
-     * @param {string} params.socksProxyUrl - 代理服务器地址
-     * @param {string} params.xUserName - X用户名（用于更新token）
-     * @param {string} params.credentialId - 凭证ID（用于数据库操作）
-     * @returns {Promise<XClient>} 初始化完成的实例
-     * @throws {Error} 如果缺少必要的环境变量或初始化失败
+     * 初始化Twitter API客户端
      */
-    static async create({
-        xClientId,
-        xClientSecret,
-        refreshToken = null,
-        socksProxyUrl,
-        xUserName,
-        credentialId
-    }) {
-        // 2. 创建实例
-        const instance = new XClient();
-        instance.credentialId = credentialId;
-        instance.xUserName = xUserName;
-
-        // 检查 proxy 是否已经是 SocksProxyAgent 实例
-        instance.proxy = socksProxyUrl instanceof SocksProxyAgent ? socksProxyUrl : new SocksProxyAgent(socksProxyUrl);
-
+    async initialize() {
         try {
-            // 3. 如果没有提供refreshToken，从数据库读取
-            let currentRefreshToken = refreshToken;
-            if (!currentRefreshToken && xUserName) {
-                const { databaseManager } = await import('./database.js');
-                currentRefreshToken = await databaseManager.getRefreshToken(xUserName);
-                console.log(`从数据库读取refreshToken [用户: ${xUserName}]`);
+            if (this.isInitialized) {
+                return true;
             }
 
-            if (!currentRefreshToken) {
-                console.log('未找到 refresh token, 请先完成授权');
-                return false;
+            console.log(`初始化Twitter API客户端: ${this.credentials.xUserName}`);
+
+            // 初始化代理
+            if (this.credentials.socksProxyUrl) {
+                this.proxy = new SocksProxyAgent(this.credentials.socksProxyUrl);
             }
 
-            // 4. 初始化 X API 客户端
-            const client = new TwitterApi({
-                clientId: xClientId,
-                clientSecret: xClientSecret,
-                httpAgent: instance.proxy
+            // 获取并刷新访问令牌
+            await this.ensureValidAccessToken();
+
+            this.isInitialized = true;
+            console.log(`✅ Twitter API客户端初始化成功: ${this.credentials.xUserName}`);
+            return true;
+
+        } catch (error) {
+            console.error(`❌ Twitter API客户端初始化失败: ${this.credentials.xUserName}`, error);
+            return false;
+        }
+    }
+
+    /**
+     * 确保访问令牌有效
+     */
+    async ensureValidAccessToken() {
+        try {
+            // 从数据库获取刷新令牌
+            const refreshToken = await this.database.getRefreshToken(this.credentials.xUserName);
+
+            if (!refreshToken) {
+                throw new Error(`未找到用户 ${this.credentials.xUserName} 的刷新令牌`);
+            }
+
+            // 初始化 Twitter API 客户端
+            const baseClient = new TwitterApi({
+                clientId: this.credentials.xClientId,
+                clientSecret: this.credentials.xClientSecret,
+                httpAgent: this.proxy
             });
 
-            // 5. 刷新token
+            // 刷新token
             const {
                 client: refreshedClient,
                 refreshToken: newRefreshToken
-            } = await client.refreshOAuth2Token(currentRefreshToken);
+            } = await baseClient.refreshOAuth2Token(refreshToken);
 
-            console.log(`✅ 刷新令牌成功 [用户: ${xUserName}]`);
+            console.log(`✅ 刷新令牌成功 [用户: ${this.credentials.xUserName}]`);
 
-            // 6. 保存新的refreshToken到数据库
-            const { databaseManager } = await import('./database.js');
-            await databaseManager.saveRefreshToken(xUserName, newRefreshToken);
-            console.log(`✅ 新refreshToken已保存到数据库 [用户: ${xUserName}]`);
+            // 保存新的refreshToken到数据库
+            await this.database.saveRefreshToken(this.credentials.xUserName, newRefreshToken);
+            console.log(`✅ 新refreshToken已保存到数据库 [用户: ${this.credentials.xUserName}]`);
 
-            // 7. 设置客户端
-            instance.client = refreshedClient;
+            // 设置客户端
+            this.client = refreshedClient;
 
-            return instance;
         } catch (error) {
-            console.error('初始化X客户端失败:', error);
-            return false;
+            console.error(`❌ 刷新访问令牌失败: ${this.credentials.xUserName}`, error);
+            throw error;
         }
     }
 
@@ -193,7 +207,6 @@ export class XClient {
         try {
             const user = await this.client.v2.me();
             const { id: userId, username: userName } = user.data;
-            // notificationManager.success(`获取用户信息成功 [用户 ${userName}]`);
             return { userId, userName };
         } catch (error) {
             console.error(`获取用户信息失败 [原因 ${error.message}]`);
@@ -204,13 +217,11 @@ export class XClient {
     /**
      * 通过用户名查找用户信息
      * @param {string} username - 目标用户名
-     * @returns {Promise<{userId: string}>} 用户ID
+     * @returns {Promise<{userId: string, nickname: string}>} 用户ID和昵称
      */
     async findUserByUsername(username) {
         try {
             const user = await this.client.v2.userByUsername(username);
-            // console.log('用户信息:', user);
-            // notificationManager.success(`获取用户信息成功 [用户 ${username}]`);
             return { userId: user.data.id, nickname: user.data.name };
         } catch (error) {
             console.error(`获取用户信息失败 [原因 ${error.message}]`);
@@ -219,49 +230,19 @@ export class XClient {
     }
 
     /**
-     * 关注指定用户
-     * @param {string} username - 要关注的用户名
-     * @returns {Promise<void>}
-     */
-    async follow(username) {
-        try {
-            const { userId } = await this.getCurrentUserProfile();
-            const { userId: targetUserId } = await this.findUserByUsername(username);
-            await this.client.v2.follow(userId, targetUserId);
-            // notificationManager.success(`关注成功 [用户 ${username}]`);
-            return true;
-        } catch (error) {
-            console.error(`关注失败 [原因 ${error.message}]`);
-            return false;
-        }
-    }
-
-    /**
-     * 发送推文
-     * @param {string} text - 推文内容
-     * @returns {Promise<void>}
-     */
-    async tweet(text) {
-        try {
-            const { data: createdTweet } = await this.client.v2.tweet(text);
-            const { id: tweetId } = createdTweet;
-            // notificationManager.success(`发送推文成功 [推文ID ${tweetId}]`);
-            return tweetId;
-        } catch (error) {
-            console.error(`发送推文失败 [原因 ${error.message}]`);
-            return false;
-        }
-    }
-
-    /**
      * 获取用户的最新推文（单次请求，节省API配额）
      * @param {string} username 用户名
-     * @param {string} sinceId 起始推文ID
-     * @param {number} maxTweets 最大获取推文数量，默认10条
+     * @param {string} lastCheckTime 上次检查时间
+     * @param {number} maxTweets 最大获取推文数量，默认20条
      * @returns {Promise<Array>} 推文列表
      */
     async getUserTweets(username, lastCheckTime = null, maxTweets = 20) {
         try {
+            // 检查请求限制
+            if (!this.canMakeRequest()) {
+                throw new Error('已达到每日请求限制');
+            }
+
             if (!this.client) {
                 throw new Error('Twitter客户端未初始化');
             }
@@ -290,8 +271,13 @@ export class XClient {
             } else {
                 console.log(`获取推文 [用户: ${username}] [首次监控，最大: ${params.max_results}条]`)
             }
+
             // 单次API请求获取用户推文
             const tweets = await this.client.v2.userTimeline(userId, params);
+
+            // 更新请求计数
+            this.updateRequestCount();
+
             if (!tweets._realData || !tweets._realData.data || tweets._realData.data.length === 0) {
                 console.log(`没有新推文 [用户: ${username}]`);
                 return [];
@@ -311,7 +297,12 @@ export class XClient {
                     text: fullText,
                     createdAt: tweet.created_at, // Twitter API v2 使用 created_at 字段
                     url: `https://twitter.com/${username}/status/${tweet.id}`,
-                    metrics: tweet.public_metrics
+                    metrics: tweet.public_metrics,
+                    author_id: tweet.author_id,
+                    created_at: tweet.created_at,
+                    public_metrics: tweet.public_metrics,
+                    context_annotations: tweet.context_annotations || [],
+                    raw_data: tweet
                 };
             });
 
@@ -326,7 +317,7 @@ export class XClient {
                     const tweetTimeMs = new Date(tweet.createdAt).getTime();
                     return tweetTimeMs > checkTimeMs;
                 });
-                
+
                 if (filteredTweets.length < formattedTweets.length) {
                     console.log(`客户端时间过滤: ${formattedTweets.length}条 -> ${filteredTweets.length}条 [过滤掉${formattedTweets.length - filteredTweets.length}条重复/旧推文]`);
                 }
@@ -349,10 +340,133 @@ export class XClient {
                 await new Promise(resolve => setTimeout(resolve, waitTimeMs));
 
                 // 递归重试
-                return await this.getUserTweets(username, sinceId, maxTweets);
+                return await this.getUserTweets(username, lastCheckTime, maxTweets);
             }
 
             throw error;
         }
     }
+
+    /**
+     * 关注指定用户
+     * @param {string} username - 要关注的用户名
+     * @returns {Promise<boolean>}
+     */
+    async follow(username) {
+        try {
+            const { userId } = await this.getCurrentUserProfile();
+            const { userId: targetUserId } = await this.findUserByUsername(username);
+            await this.client.v2.follow(userId, targetUserId);
+            console.log(`关注成功 [用户 ${username}]`);
+            return true;
+        } catch (error) {
+            console.error(`关注失败 [原因 ${error.message}]`);
+            return false;
+        }
+    }
+
+    /**
+     * 发送推文
+     * @param {string} text - 推文内容
+     * @returns {Promise<string|boolean>} 推文ID或false
+     */
+    async tweet(text) {
+        try {
+            const { data: createdTweet } = await this.client.v2.tweet(text);
+            const { id: tweetId } = createdTweet;
+            console.log(`发送推文成功 [推文ID ${tweetId}]`);
+            return tweetId;
+        } catch (error) {
+            console.error(`发送推文失败 [原因 ${error.message}]`);
+            return false;
+        }
+    }
+
+    /**
+     * 检查是否可以发起请求
+     * @returns {boolean} 是否可以请求
+     */
+    canMakeRequest() {
+        const now = Date.now();
+        const oneDay = 24 * 60 * 60 * 1000;
+
+        // 如果是新的一天，重置请求计数
+        if (now - this.lastRequestTime > oneDay) {
+            this.requestCount = 0;
+        }
+
+        return this.requestCount < this.dailyRequestLimit;
+    }
+
+    /**
+     * 更新请求计数
+     */
+    updateRequestCount() {
+        this.requestCount++;
+        this.lastRequestTime = Date.now();
+
+        console.log(`API请求计数: ${this.requestCount}/${this.dailyRequestLimit} (${this.credentials.xUserName})`);
+    }
+
+    /**
+     * 获取请求统计信息
+     * @returns {Object} 统计信息
+     */
+    getRequestStats() {
+        return {
+            username: this.credentials.xUserName,
+            requestCount: this.requestCount,
+            dailyLimit: this.dailyRequestLimit,
+            remainingRequests: Math.max(0, this.dailyRequestLimit - this.requestCount),
+            lastRequestTime: this.lastRequestTime,
+            canMakeRequest: this.canMakeRequest()
+        };
+    }
+
+    /**
+     * 重置请求计数
+     */
+    resetRequestCount() {
+        this.requestCount = 0;
+        this.lastRequestTime = 0;
+        console.log(`重置请求计数: ${this.credentials.xUserName}`);
+    }
+
+    /**
+     * 关闭客户端
+     */
+    async close() {
+        try {
+            this.isInitialized = false;
+            this.client = null;
+            this.cachedUserInfo = null;
+            console.log(`Twitter API客户端已关闭: ${this.credentials.xUserName}`);
+
+        } catch (error) {
+            console.error(`关闭Twitter API客户端时出错: ${this.credentials.xUserName}`, error);
+        }
+    }
+
+    /**
+     * 测试连接
+     * @returns {Promise<boolean>} 连接是否正常
+     */
+    async testConnection() {
+        try {
+            if (!this.isInitialized) {
+                await this.initialize();
+            }
+
+            // 尝试获取自己的用户信息
+            const result = await this.getCurrentUserProfile();
+            return !!result;
+
+        } catch (error) {
+            console.error(`测试Twitter API连接失败: ${this.credentials.xUserName}`, error);
+            return false;
+        }
+    }
 }
+
+// 为了向后兼容，导出XClient别名
+export const XClient = TwitterApiClient;
