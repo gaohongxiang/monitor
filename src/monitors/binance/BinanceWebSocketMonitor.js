@@ -526,14 +526,16 @@ export class BinanceWebSocketMonitor extends BaseMonitor {
             }
 
             // 翻译标题到中文
-            console.log('🌐 开始翻译公告标题...');
+            console.log(`🌐 开始翻译公告标题: "${title}"`);
             const titleChinese = await this.translateToChineseWithRetry(title);
+            console.log(`🌐 标题翻译结果: "${titleChinese}"`);
 
             // 翻译分类名称到中文（如果存在）
             let catalogChinese = '';
             if (catalogName) {
-                console.log('🌐 开始翻译分类名称...');
+                console.log(`🌐 开始翻译分类名称: "${catalogName}"`);
                 catalogChinese = await this.translateToChineseWithRetry(catalogName);
+                console.log(`🌐 分类翻译结果: "${catalogChinese}"`);
             }
 
             // 构建可点击的链接
@@ -552,9 +554,15 @@ export class BinanceWebSocketMonitor extends BaseMonitor {
             // 添加标题信息
             notificationMessage += `
 
-📢 标题:
-${title}
-${titleChinese}
+📢 标题: ${title}`;
+
+            // 只有翻译成功且与原文不同时才添加中文标题
+            if (titleChinese && titleChinese !== title && titleChinese.trim() !== '') {
+                notificationMessage += `
+📢 中文: ${titleChinese}`;
+            }
+
+            notificationMessage += `
 
 ⏰ 发布时间: ${publishTime}
 🔗 查看详情: ${binanceUrl}
