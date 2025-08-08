@@ -378,7 +378,12 @@ export class UnifiedConfigManager {
             checkInterval: parseInt(process.env.BINANCE_CHECK_INTERVAL || '30'),
             languages: (process.env.BINANCE_LANGUAGES || 'zh-CN,en').split(','),
             maxRetries: parseInt(process.env.MAX_RETRY_ATTEMPTS || '3'),
-            retryDelay: 5000
+            retryDelay: 5000,
+            // DeepL翻译配置
+            translation: {
+                provider: 'deepl',
+                apiKey: process.env.DEEPL_API_KEY
+            }
         };
     }
 

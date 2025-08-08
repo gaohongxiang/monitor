@@ -7,7 +7,7 @@ import { BaseMonitor } from '../base/BaseMonitor.js';
 import WebSocket from 'ws';
 import crypto from 'crypto';
 import { SocksProxyAgent } from 'socks-proxy-agent';
-import translate from 'google-translate-api-x';
+import * as deepl from 'deepl-node';
 
 export class BinanceWebSocketMonitor extends BaseMonitor {
     constructor(sharedServices, config = {}) {
@@ -244,23 +244,28 @@ export class BinanceWebSocketMonitor extends BaseMonitor {
             return text;
         }
 
+        // 初始化DeepL翻译器
+        const deeplApiKey = process.env.DEEPL_API_KEY;
+        
+        if (!deeplApiKey) {
+            console.warn('⚠️  DeepL API密钥未配置，返回原文');
+            return text;
+        }
+
+        const translator = new deepl.Translator(deeplApiKey);
+
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
             try {
-                console.log(`🌐 翻译文本 (尝试 ${attempt}/${maxRetries}): ${text.substring(0, 50)}...`);
+                console.log(`🌐 使用DeepL翻译文本 (尝试 ${attempt}/${maxRetries}): ${text.substring(0, 50)}...`);
 
-                const result = await translate(text, {
-                    from: 'en',
-                    to: 'zh-cn',
-                    forceTo: true,
-                    timeout: 10000 // 10秒超时
-                });
-
+                const result = await translator.translateText(text, 'en', 'zh');
                 const translatedText = result.text;
-                console.log(`✅ 翻译成功: ${translatedText.substring(0, 50)}...`);
+                
+                console.log(`✅ DeepL翻译成功: ${translatedText.substring(0, 50)}...`);
                 return translatedText;
 
             } catch (error) {
-                console.log(`❌ 翻译失败 (尝试 ${attempt}/${maxRetries}):`, error.message);
+                console.log(`❌ DeepL翻译失败 (尝试 ${attempt}/${maxRetries}):`, error.message);
 
                 if (attempt === maxRetries) {
                     console.log(`⚠️  翻译最终失败，返回原文: ${text}`);

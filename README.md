@@ -150,6 +150,30 @@ Twitter API V2免费版限制严格：
    - 定期轮换API密钥
    - 只授予必要的最小权限
 
+### 创建DeepL API密钥
+
+**DeepL翻译用于将Binance公告等英文内容翻译为中文**：
+
+1. **注册DeepL账户**：
+   - 访问 [DeepL官网](https://www.deepl.com/pro-api)
+   - 点击 "Sign up for free" 注册免费账户
+   - 注意：注册需要添加信用卡信息，不支持中国。实测 `bybit card` 可以添加成功。
+
+2. **创建API密钥**：
+   - 登录后进入 [API管理页面](https://www.deepl.com/account/api)
+   - 在 "Authentication Key for DeepL API" 部分
+   - 复制显示的API密钥（格式类似：`xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx:fx`）
+
+3. **免费版限制**：
+   - **每月50万字符** - 对于监控系统来说完全够用
+   - **翻译质量高** - 特别适合金融和技术术语翻译
+   - **无需信用卡** - 注册即可使用
+
+4. **配置说明**：
+   - 免费版API密钥以 `:fx` 结尾
+   - 付费版API密钥不带后缀
+   - 系统会自动识别并使用对应的API服务器
+
 ### 创建钉钉机器人
 
 1. **打开钉钉群聊**：
@@ -200,34 +224,10 @@ npm install
 
 ### 2. 配置环境变量
 ```bash
-# 复制并编辑环境变量文件
+# 复制并编辑环境变量文件。示例文件有详细的说明
 cp .env.example .env
 ```
 
-**环境变量配置示例**：
-```bash
-# ===== 模块控制 =====
-TWITTER_ENABLED=true    # 启用/禁用Twitter监控
-BINANCE_ENABLED=true    # 启用/禁用Binance监控
-
-# ===== 通知配置 =====
-DINGTALK_ACCESS_TOKEN=你的钉钉机器人访问令牌
-
-# ===== Binance实时监控配置 =====
-BINANCE_API_KEY=你的Binance_API密钥
-BINANCE_SECRET_KEY=你的Binance_Secret密钥
-
-# ===== Twitter定时监控配置 =====
-DATABASE_URL=你的Supabase数据库连接字符串
-API_CREDENTIALS='[{"username":"用户名","credentials":[...]}]'
-MONITOR_START_TIME=09:00
-MONITOR_END_TIME=23:00
-```
-
-**模块控制说明**：
-- 可以只启用Twitter监控：`TWITTER_ENABLED=true, BINANCE_ENABLED=false`
-- 可以只启用Binance监控：`TWITTER_ENABLED=false, BINANCE_ENABLED=true`
-- 可以同时启用两个模块：`TWITTER_ENABLED=true, BINANCE_ENABLED=true`
 
 ### 3. 数据库初始化
 数据库表结构会在系统首次启动时自动创建，无需手动迁移。
@@ -271,25 +271,8 @@ npm start
    - 连接你的GitHub仓库
 
 ### 3. 设置环境变量
-在Railway控制台设置：
-```bash
-# 模块控制
-TWITTER_ENABLED=true
-BINANCE_ENABLED=true
+在Railway控制台设置设置需要的环境变量即可
 
-# 通知配置
-DINGTALK_ACCESS_TOKEN=your_dingtalk_token
-
-# Binance配置（如果启用）
-BINANCE_API_KEY=your_binance_api_key
-BINANCE_SECRET_KEY=your_binance_secret_key
-
-# Twitter配置（如果启用）
-DATABASE_URL=your_supabase_postgresql_url
-API_CREDENTIALS=your_twitter_json_config
-MONITOR_START_TIME=09:00
-MONITOR_END_TIME=23:00
-```
 ### 4.认证API凭证
 由于开发和生产环境使用的同一个数据库，开发环境认证过了这里就不需要认证了。
 

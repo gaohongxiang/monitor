@@ -338,6 +338,41 @@ for (let i = 0; i < apiCredentialCount; i++) {
 }
 ```
 
+#### DeepL翻译集成
+Binance监控使用DeepL API进行英文公告的中文翻译：
+
+```javascript
+// DeepL翻译实现
+async translateToChineseWithRetry(text, maxRetries = 3) {
+    const deeplApiKey = process.env.DEEPL_API_KEY;
+    
+    if (!deeplApiKey) {
+        console.warn('⚠️  DeepL API密钥未配置，返回原文');
+        return text;
+    }
+
+    const translator = new deepl.Translator(deeplApiKey);
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            const result = await translator.translateText(text, 'en', 'zh');
+            return result.text;
+        } catch (error) {
+            if (attempt === maxRetries) {
+                return text; // 翻译失败时返回原文
+            }
+            await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+        }
+    }
+}
+```
+
+**DeepL翻译特性：**
+- **高质量翻译** - 特别适合金融和技术术语
+- **免费额度** - 每月50万字符，足够监控系统使用
+- **自动重试** - 翻译失败时自动重试，最终返回原文
+- **错误容错** - 翻译服务异常时不影响监控主流程
+
 ### 通知系统工作流程
 
 #### 统一通知管理器
