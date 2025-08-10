@@ -412,7 +412,11 @@ export class BinanceWebSocketMonitor extends BaseMonitor {
         this.dailyReconnectTimeout = setTimeout(() => {
             console.log('⏰ 24小时连接限制，主动重连...');
             if (this.isRunning) {
-                this.reconnect();
+                // 先断开现有连接，然后重新连接
+                if (this.ws) {
+                    this.ws.close();
+                }
+                this.connect();
             }
         }, reconnectDelay);
 
