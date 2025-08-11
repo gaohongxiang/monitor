@@ -30,13 +30,13 @@ export class BinanceWebSocketMonitor extends BaseMonitor {
             console.log(`🌐 配置代理: ${this.proxyUrl}`);
             this.agent = new SocksProxyAgent(this.proxyUrl);
         }
-        
+
         // WebSocket配置
         this.recvWindow = config.recvWindow || 30000; // 30秒窗口
         this.topics = config.topics || ['com_announcement_en']; // 默认订阅英文公告主题（官方只提供英文推送）
         this.maxReconnectAttempts = config.maxReconnectAttempts || 10;
         this.reconnectDelay = config.reconnectDelay || 5000; // 5秒重连延迟
-        
+
         // 连接状态
         this.ws = null;
         this.isConnected = false;
@@ -48,6 +48,10 @@ export class BinanceWebSocketMonitor extends BaseMonitor {
         this.connectionStartTime = null;
         this.dailyReconnectTimeout = null;
         
+        // 去重机制
+        this.processedAnnouncements = new Set(); // 存储已处理的公告ID
+        this.announcementCacheTimeout = 5 * 60 * 1000; // 5分钟缓存
+
         // 统计信息
         this.stats = {
             connections: 0,
@@ -59,7 +63,7 @@ export class BinanceWebSocketMonitor extends BaseMonitor {
             uptime: 0,
             connectionDurations: [] // 记录连接持续时间，用于分析稳定性
         };
-        
+
         console.log('🔌 Binance WebSocket监控器已初始化');
         console.log(`📋 配置: 主题=${this.topics.join('|')}, 接收窗口=${this.recvWindow}ms`);
     }
@@ -117,7 +121,7 @@ export class BinanceWebSocketMonitor extends BaseMonitor {
 
             const connectionUrl = await this.buildConnectionUrl();
             console.log('🌐 连接URL已生成');
-            
+
             const wsOptions = {
                 headers: {
                     'X-MBX-APIKEY': this.apiKey
@@ -131,13 +135,13 @@ export class BinanceWebSocketMonitor extends BaseMonitor {
             }
 
             this.ws = new WebSocket(connectionUrl, [], wsOptions);
-            
+
             this.setupEventHandlers();
-            
+
         } catch (error) {
             console.error('❌ 建立连接失败:', error.message);
             this.stats.errors++;
-            
+
             if (this.isRunning) {
                 this.scheduleReconnect();
             }
@@ -246,7 +250,7 @@ export class BinanceWebSocketMonitor extends BaseMonitor {
 
         // 初始化DeepL翻译器
         const deeplApiKey = process.env.DEEPL_API_KEY;
-        
+
         if (!deeplApiKey) {
             console.warn('⚠️  DeepL API密钥未配置，返回原文');
             return text;
@@ -260,7 +264,7 @@ export class BinanceWebSocketMonitor extends BaseMonitor {
 
                 const result = await translator.translateText(text, 'en', 'zh');
                 const translatedText = result.text;
-                
+
                 console.log(`✅ DeepL翻译成功: ${translatedText.substring(0, 50)}...`);
                 return translatedText;
 
@@ -386,7 +390,7 @@ export class BinanceWebSocketMonitor extends BaseMonitor {
      */
     startHeartbeat() {
         console.log('💓 启动心跳机制 (每30秒)');
-        
+
         this.pingInterval = setInterval(() => {
             if (this.ws && this.ws.readyState === WebSocket.OPEN) {
                 this.ws.ping(); // 发送空载荷PING
@@ -432,7 +436,7 @@ export class BinanceWebSocketMonitor extends BaseMonitor {
                 command: 'SUBSCRIBE',
                 value: topic
             };
-            
+
             this.ws.send(JSON.stringify(subscribeMessage));
             console.log(`📡 订阅主题: ${topic}`);
         }
@@ -491,18 +495,83 @@ export class BinanceWebSocketMonitor extends BaseMonitor {
     async handleAnnouncementData(message) {
         try {
             console.log('📢 收到公告数据，开始处理...');
+
+            // 生成消息唯一标识符用于去重
+            const messageId = this.generateMessageId(message);
+            
+            // 检查是否已经处理过这条消息
+            if (this.processedAnnouncements.has(messageId)) {
+                console.log(`⚠️  消息已处理过，跳过重复处理: ${messageId}`);
+                return;
+            }
+
+            // 验证消息是否包含有效的公告内容
+            if (!this.isValidAnnouncementMessage(message)) {
+                console.log('⚠️  消息不包含有效公告内容，跳过处理');
+                return;
+            }
+
+            // 标记消息为已处理
+            this.processedAnnouncements.add(messageId);
+            
+            // 设置定时清理，避免内存泄漏
+            setTimeout(() => {
+                this.processedAnnouncements.delete(messageId);
+            }, this.announcementCacheTimeout);
+
             this.stats.announcementsProcessed++;
-            
-            // 这里可以集成现有的公告处理逻辑
-            // 例如调用 AnnouncementProcessor
-            
+
             // 发送通知
             await this.sendAnnouncementNotification(message);
-            
+
         } catch (error) {
             console.error('❌ 处理公告数据失败:', error.message);
             this.stats.errors++;
         }
+    }
+
+    /**
+     * 生成消息唯一标识符
+     */
+    generateMessageId(message) {
+        // 尝试从消息中提取唯一标识符
+        let identifier = '';
+        
+        if (message.type === 'DATA' && message.data) {
+            try {
+                const announcementData = JSON.parse(message.data);
+                // 使用标题+发布时间作为唯一标识
+                identifier = `${announcementData.title || 'unknown'}_${announcementData.publishDate || Date.now()}`;
+            } catch (error) {
+                // 如果解析失败，使用消息内容的哈希
+                identifier = crypto.createHash('md5').update(JSON.stringify(message)).digest('hex');
+            }
+        } else {
+            // 使用消息内容的哈希作为标识符
+            identifier = crypto.createHash('md5').update(JSON.stringify(message)).digest('hex');
+        }
+        
+        return identifier;
+    }
+
+    /**
+     * 验证消息是否包含有效的公告内容
+     */
+    isValidAnnouncementMessage(message) {
+        // 只处理包含实际公告数据的消息
+        if (message.type === 'DATA' && message.data) {
+            try {
+                const announcementData = JSON.parse(message.data);
+                // 必须包含标题才认为是有效公告
+                return announcementData.title && announcementData.title.trim() !== '';
+            } catch (error) {
+                console.warn('⚠️  解析公告数据失败:', error.message);
+                return false;
+            }
+        }
+        
+        // 其他类型的消息暂时不处理
+        return false;
     }
 
     /**
@@ -598,7 +667,7 @@ export class BinanceWebSocketMonitor extends BaseMonitor {
             this.isRunning = false;
             return;
         }
-        
+
         this.reconnectAttempts++;
         this.stats.reconnections++;
 
