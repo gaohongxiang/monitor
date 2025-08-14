@@ -36,8 +36,8 @@ export class BaseMonitor {
                 throw new Error('配置验证失败');
             }
 
-            // 注册模块到数据库
-            await this.registerModule();
+            // 注册模块到数据库（可选，简化版可以跳过）
+            // await this.registerModule();
 
             // 执行子类特定的初始化
             await this.onInitialize();
@@ -77,8 +77,7 @@ export class BaseMonitor {
             this.statistics.startTime = new Date();
             this.statistics.lastActivity = new Date();
 
-            // 更新数据库状态
-            await this.updateModuleStatus('running');
+            // 状态已在内存中更新，不需要数据库状态表
 
             // 启动健康检查
             this.startHealthCheck();
@@ -92,7 +91,6 @@ export class BaseMonitor {
         } catch (error) {
             this.logger.error(`监控模块 ${this.moduleName} 启动失败`, { error: error.message });
             this.status = 'error';
-            await this.updateModuleStatus('error');
             return false;
         }
     }
@@ -118,7 +116,6 @@ export class BaseMonitor {
 
             // 更新状态
             this.status = 'stopped';
-            await this.updateModuleStatus('stopped');
 
             this.logger.info(`监控模块 ${this.moduleName} 已停止`);
             return true;
@@ -375,20 +372,7 @@ export class BaseMonitor {
         }
     }
 
-    /**
-     * 更新模块状态到数据库
-     * @param {string} status - 状态
-     */
-    async updateModuleStatus(status) {
-        try {
-            const database = this.getDatabase();
-            if (database) {
-                await database.updateModuleStatus(this.moduleName, status);
-            }
-        } catch (error) {
-            this.logger.error('更新模块状态失败', { error: error.message });
-        }
-    }
+
 
     /**
      * 获取安全的配置（移除敏感信息）

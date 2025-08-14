@@ -4,20 +4,31 @@
  */
 import pg from 'pg';
 const { Pool } = pg;
+import { SchemaManager } from './schema-manager.js';
+import { BinanceAnnouncementSchema } from '../monitors/binance-announcement/schema.js';
+import { BinancePriceSchema } from '../monitors/binance-price/schema.js';
+import { TwitterSchema } from '../monitors/twitter/schema.js';
 
 export class UnifiedDatabaseManager {
     constructor() {
         this.pool = null;
         this.isInitialized = false;
         this.connectionConfig = null;
+        this.schemaManager = new SchemaManager(this);
+
+        // 注册模块表结构
+        this.schemaManager.registerModuleSchema('binance-announcement', BinanceAnnouncementSchema);
+        this.schemaManager.registerModuleSchema('binance-price', BinancePriceSchema);
+        this.schemaManager.registerModuleSchema('twitter', TwitterSchema);
     }
 
     /**
      * 初始化数据库连接
      * @param {Object} config - 数据库配置
+     * @param {Array<string>} enabledModules - 启用的模块列表
      * @returns {Promise<boolean>} 是否初始化成功
      */
-    async initialize(config = null) {
+    async initialize(config = null, enabledModules = []) {
         try {
             if (config && config.url) {
                 // 使用传入的配置
@@ -46,8 +57,8 @@ export class UnifiedDatabaseManager {
             await client.query('SELECT NOW()');
             client.release();
 
-            // 初始化数据库表结构
-            await this.initializeTables();
+            // 使用模块化表管理
+            await this.initializeModularTables(enabledModules);
 
             this.isInitialized = true;
             console.log('✅ 统一数据库管理器初始化成功');
@@ -60,90 +71,19 @@ export class UnifiedDatabaseManager {
         }
     }
 
+
+
     /**
-     * 初始化数据库表结构
+     * 使用模块化方式初始化表结构
+     * @param {Array<string>} enabledModules - 启用的模块列表
      */
-    async initializeTables() {
-        const client = await this.pool.connect();
-        
+    async initializeModularTables(enabledModules) {
         try {
-            await client.query('BEGIN');
-
-            // 创建监控模块注册表
-            await client.query(`
-                CREATE TABLE IF NOT EXISTS monitor_modules (
-                    module_name VARCHAR(50) PRIMARY KEY,
-                    module_type VARCHAR(20) NOT NULL,
-                    enabled BOOLEAN DEFAULT true,
-                    config JSONB,
-                    status VARCHAR(20) DEFAULT 'stopped',
-                    last_start_time TIMESTAMP,
-                    last_stop_time TIMESTAMP,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            `);
-
-            // 扩展现有monitor_state表
-            await client.query(`
-                ALTER TABLE monitor_state 
-                ADD COLUMN IF NOT EXISTS module_name VARCHAR(50) DEFAULT 'twitter',
-                ADD COLUMN IF NOT EXISTS last_announcement_id VARCHAR(100),
-                ADD COLUMN IF NOT EXISTS websocket_status VARCHAR(20),
-                ADD COLUMN IF NOT EXISTS api_status VARCHAR(20)
-            `);
-
-
-
-            // 创建通知历史表
-            await client.query(`
-                CREATE TABLE IF NOT EXISTS notification_history (
-                    id SERIAL PRIMARY KEY,
-                    module_name VARCHAR(50) NOT NULL,
-                    notification_type VARCHAR(50) NOT NULL,
-                    content TEXT NOT NULL,
-                    recipient VARCHAR(100),
-                    status VARCHAR(20) DEFAULT 'pending',
-                    sent_at TIMESTAMP,
-                    error_message TEXT,
-                    retry_count INTEGER DEFAULT 0,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            `);
-
-            // 创建系统性能指标表
-            await client.query(`
-                CREATE TABLE IF NOT EXISTS system_metrics (
-                    id SERIAL PRIMARY KEY,
-                    module_name VARCHAR(50),
-                    metric_name VARCHAR(50) NOT NULL,
-                    metric_value DECIMAL(10,2),
-                    metric_unit VARCHAR(20),
-                    recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            `);
-
-            // 创建索引
-
-            await client.query(`
-                CREATE INDEX IF NOT EXISTS idx_notification_history_module 
-                ON notification_history(module_name, created_at)
-            `);
-
-            await client.query(`
-                CREATE INDEX IF NOT EXISTS idx_system_metrics_module 
-                ON system_metrics(module_name, recorded_at)
-            `);
-
-            await client.query('COMMIT');
-            console.log('✅ 数据库表结构初始化完成');
-
+            await this.schemaManager.initializeModuleTables(enabledModules);
+            console.log('✅ 模块化表结构初始化完成');
         } catch (error) {
-            await client.query('ROLLBACK');
-            console.error('❌ 数据库表初始化失败:', error.message);
+            console.error('❌ 模块化表结构初始化失败:', error.message);
             throw error;
-        } finally {
-            client.release();
         }
     }
 
@@ -175,88 +115,6 @@ export class UnifiedDatabaseManager {
             return await this.initialize(this.connectionConfig);
         }
     }
-
-    // ==================== 监控模块管理 ====================
-
-    /**
-     * 注册监控模块
-     * @param {string} moduleName - 模块名称
-     * @param {string} moduleType - 模块类型
-     * @param {Object} config - 模块配置
-     */
-    async registerModule(moduleName, moduleType, config = {}) {
-        if (!await this.ensureConnection()) return false;
-
-        try {
-            const query = `
-                INSERT INTO monitor_modules (module_name, module_type, config, created_at, updated_at)
-                VALUES ($1, $2, $3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                ON CONFLICT (module_name) 
-                DO UPDATE SET 
-                    module_type = $2,
-                    config = $3,
-                    updated_at = CURRENT_TIMESTAMP
-            `;
-            
-            await this.pool.query(query, [moduleName, moduleType, JSON.stringify(config)]);
-            console.log(`✅ 模块 ${moduleName} 注册成功`);
-            return true;
-        } catch (error) {
-            console.error(`❌ 注册模块 ${moduleName} 失败:`, error.message);
-            return false;
-        }
-    }
-
-    /**
-     * 更新模块状态
-     * @param {string} moduleName - 模块名称
-     * @param {string} status - 状态
-     */
-    async updateModuleStatus(moduleName, status) {
-        if (!await this.ensureConnection()) return false;
-
-        try {
-            const query = `
-                UPDATE monitor_modules 
-                SET status = $2, 
-                    ${status === 'running' ? 'last_start_time' : 'last_stop_time'} = CURRENT_TIMESTAMP,
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE module_name = $1
-            `;
-            
-            await this.pool.query(query, [moduleName, status]);
-            return true;
-        } catch (error) {
-            console.error(`❌ 更新模块状态失败:`, error.message);
-            return false;
-        }
-    }
-
-    /**
-     * 获取所有模块状态
-     * @returns {Promise<Array>} 模块状态列表
-     */
-    async getAllModuleStatus() {
-        if (!await this.ensureConnection()) return [];
-
-        try {
-            const result = await this.pool.query('SELECT * FROM monitor_modules ORDER BY module_name');
-            return result.rows;
-        } catch (error) {
-            console.error('❌ 获取模块状态失败:', error.message);
-            return [];
-        }
-    }
-
-    // ==================== 币安公告管理 ====================
-
-
-
-
-
-
-
-
 
     // ==================== 通知历史管理 ====================
 
@@ -353,7 +211,7 @@ export class UnifiedDatabaseManager {
 
         try {
             const result = await this.pool.query(
-                'SELECT refresh_token FROM refresh_tokens WHERE username = $1',
+                'SELECT refresh_token FROM twitter_refresh_tokens WHERE username = $1',
                 [username]
             );
             return result.rows.length > 0 ? result.rows[0].refresh_token : null;
@@ -374,10 +232,10 @@ export class UnifiedDatabaseManager {
 
         try {
             const query = `
-                INSERT INTO refresh_tokens (username, refresh_token, updated_at)
+                INSERT INTO twitter_refresh_tokens (username, refresh_token, updated_at)
                 VALUES ($1, $2, CURRENT_TIMESTAMP)
-                ON CONFLICT (username) 
-                DO UPDATE SET 
+                ON CONFLICT (username)
+                DO UPDATE SET
                     refresh_token = $2,
                     updated_at = CURRENT_TIMESTAMP
             `;
@@ -401,8 +259,8 @@ export class UnifiedDatabaseManager {
 
         try {
             const result = await this.pool.query(
-                'SELECT * FROM monitor_state WHERE monitor_user = $1 AND module_name = $2',
-                [monitorUser, moduleName]
+                'SELECT * FROM twitter_processed_records WHERE monitor_user = $1',
+                [monitorUser]
             );
             return result.rows.length > 0 ? result.rows[0] : null;
         } catch (error) {
@@ -423,20 +281,17 @@ export class UnifiedDatabaseManager {
 
         try {
             const query = `
-                INSERT INTO monitor_state (monitor_user, module_name, last_check_time, last_update_time, created_at, updated_at)
-                VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                ON CONFLICT (monitor_user, module_name)
+                INSERT INTO twitter_processed_records (monitor_user, last_check_time, created_at, updated_at)
+                VALUES ($1, $2, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                ON CONFLICT (monitor_user)
                 DO UPDATE SET
-                    last_check_time = $3,
-                    last_update_time = $4,
+                    last_check_time = $2,
                     updated_at = CURRENT_TIMESTAMP
             `;
 
             await this.pool.query(query, [
                 monitorUser,
-                moduleName,
-                stateData.last_check_time,
-                stateData.last_update_time
+                stateData.last_check_time
             ]);
             return true;
         } catch (error) {
@@ -445,41 +300,118 @@ export class UnifiedDatabaseManager {
         }
     }
 
+
+
+    // ==================== 公告处理历史管理 ====================
+
     /**
-     * 保存推文（兼容方法）
-     * @param {Object} tweetData - 推文数据
-     * @returns {Promise<boolean>} 是否保存成功
+     * 检查公告是否已经处理过
+     * @param {string} announcementId - 公告唯一标识符
+     * @param {string} moduleName - 模块名称
+     * @returns {Promise<boolean>} 是否已处理过
      */
-    async saveTweet(tweetData) {
+    async isAnnouncementProcessed(announcementId, moduleName = 'binance_websocket') {
         if (!await this.ensureConnection()) return false;
 
         try {
             const query = `
-                INSERT INTO tweets (
-                    tweet_id, user_id, username, content, created_at,
-                    monitor_user, url, metrics, inserted_at
-                )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP)
-                ON CONFLICT (tweet_id) DO NOTHING
-                RETURNING tweet_id
+                SELECT id FROM binance_processed_records
+                WHERE announcement_id = $1 AND module_name = $2
+                LIMIT 1
             `;
 
+            const result = await this.pool.query(query, [announcementId, moduleName]);
+            return result.rowCount > 0;
+        } catch (error) {
+            console.error('❌ 检查公告处理状态失败:', error.message);
+            return false;
+        }
+    }
+
+    /**
+     * 保存已处理的公告记录
+     * @param {string} announcementId - 公告唯一标识符
+     * @param {Object} announcementData - 公告数据
+     * @param {string} moduleName - 模块名称
+     * @returns {Promise<boolean>} 是否保存成功
+     */
+    async saveProcessedAnnouncement(announcementId, announcementData = {}, moduleName = 'binance_websocket') {
+        if (!await this.ensureConnection()) return false;
+
+        try {
+            const query = `
+                INSERT INTO binance_processed_records
+                (announcement_id, title, catalog_name, publish_date, module_name)
+                VALUES ($1, $2, $3, $4, $5)
+                ON CONFLICT (announcement_id) DO NOTHING
+                RETURNING id
+            `;
+
+            const publishDate = announcementData.publishDate ?
+                new Date(announcementData.publishDate) : null;
+
             const values = [
-                tweetData.tweet_id,
-                tweetData.user_id,
-                tweetData.username,
-                tweetData.content,
-                tweetData.created_at,
-                tweetData.monitor_user,
-                tweetData.url,
-                JSON.stringify(tweetData.metrics || {})
+                announcementId,
+                announcementData.title || null,
+                announcementData.catalogName || null,
+                publishDate,
+                moduleName
             ];
 
             const result = await this.pool.query(query, values);
             return result.rowCount > 0;
         } catch (error) {
-            console.error('❌ 保存推文失败:', error.message);
+            console.error('❌ 保存已处理公告失败:', error.message);
             return false;
+        }
+    }
+
+    /**
+     * 获取最近处理的公告列表（用于启动时加载到内存缓存）
+     * @param {string} moduleName - 模块名称
+     * @param {number} hours - 获取最近几小时的记录，默认24小时
+     * @returns {Promise<Array>} 公告ID列表
+     */
+    async getRecentProcessedAnnouncements(moduleName = 'binance_websocket', hours = 24) {
+        if (!await this.ensureConnection()) return [];
+
+        try {
+            const query = `
+                SELECT announcement_id
+                FROM binance_processed_records
+                WHERE module_name = $1
+                AND processed_at > NOW() - INTERVAL '${hours} hours'
+                ORDER BY processed_at DESC
+            `;
+
+            const result = await this.pool.query(query, [moduleName]);
+            return result.rows.map(row => row.announcement_id);
+        } catch (error) {
+            console.error('❌ 获取最近处理公告失败:', error.message);
+            return [];
+        }
+    }
+
+    /**
+     * 清理过期的公告处理记录
+     * @param {number} days - 保留天数，默认30天
+     * @returns {Promise<number>} 清理的记录数
+     */
+    async cleanupOldProcessedAnnouncements(days = 30) {
+        if (!await this.ensureConnection()) return 0;
+
+        try {
+            const query = `
+                DELETE FROM binance_processed_records
+                WHERE processed_at < NOW() - INTERVAL '${days} days'
+            `;
+
+            const result = await this.pool.query(query);
+            console.log(`🧹 清理了 ${result.rowCount} 条过期的公告处理记录`);
+            return result.rowCount;
+        } catch (error) {
+            console.error('❌ 清理过期公告记录失败:', error.message);
+            return 0;
         }
     }
 
@@ -560,10 +492,7 @@ export class UnifiedDatabaseManager {
                 deleteQuery = 'DELETE FROM system_metrics WHERE recorded_at < $1';
                 countQuery = 'SELECT COUNT(*) FROM system_metrics WHERE recorded_at < $1';
                 break;
-            case 'tweets':
-                deleteQuery = 'DELETE FROM tweets WHERE saved_at < $1';
-                countQuery = 'SELECT COUNT(*) FROM tweets WHERE saved_at < $1';
-                break;
+
             default:
                 throw new Error(`不支持的表名: ${table_name}`);
         }
@@ -658,11 +587,11 @@ export class UnifiedDatabaseManager {
                 // 获取各表的行数和大小
                 const tables = [
                     'monitor_modules',
-                    'monitor_state',
+                    'twitter_processed_records',
+                    'binance_processed_records',
                     'notification_history',
                     'system_metrics',
-                    'refresh_tokens',
-                    'tweets'
+                    'twitter_refresh_tokens'
                 ];
 
                 for (const tableName of tables) {

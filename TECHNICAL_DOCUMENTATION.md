@@ -2,22 +2,25 @@
 
 ## 项目概述
 
-多源监控系统是一个基于Node.js的统一监控平台，支持Twitter定时监控和Binance实时监控。系统采用模块化架构，通过监控编排器统一管理多个监控源，支持独立启用/禁用各监控模块，并提供统一的通知和日志服务。
+多源监控系统是一个基于Node.js的统一监控平台，采用模块化架构设计，支持多种监控源的独立管理。系统通过监控编排器统一管理所有监控模块，每个模块可独立启用/禁用，并提供统一的通知和数据管理服务。
 
 ## 核心特性
 
 ### 🎯 **多源监控支持**
 - **Twitter监控** - 定时轮询，多API凭证管理，智能时间调度
-- **Binance监控** - 实时WebSocket连接，公告推送监控
+- **Binance公告监控** - 实时WebSocket连接，公告推送监控
+- **Binance价格监控** - 价格变化预警，多交易对监控
 
-### 🔧 **统一架构**
+### 🔧 **模块化架构**
 - **监控编排器** - 统一管理所有监控模块的生命周期
 - **模块化设计** - 每个监控源独立实现，可单独启用/禁用
+- **模块内表管理** - 每个模块管理自己的数据库表结构
 - **共享服务** - 统一的配置、数据库、通知、日志管理
 
 ### 📱 **通知与存储**
 - **钉钉通知集成** - 实时推送监控结果到钉钉群
-- **数据库持久化** - 使用Supabase PostgreSQL存储状态和历史数据
+- **数据库持久化** - 使用PostgreSQL存储状态和历史数据
+- **模块化表结构** - 每个模块独立管理数据表
 - **健康检查** - HTTP API提供系统状态监控
 
 ### 🌍 **部署与运维**
@@ -40,24 +43,30 @@ graph TB
     C --> G[日志管理器 UnifiedLoggerManager]
 
     B --> H[Twitter监控模块]
-    B --> I[Binance监控模块]
+    B --> I[Binance公告监控模块]
+    B --> J[Binance价格监控模块]
 
-    H --> J[TwitterMonitor]
-    H --> K[TwitterScheduler - 定时调度]
-    H --> L[TwitterApiClient - API客户端]
+    H --> K[TwitterMonitor]
+    H --> L[TwitterScheduler - 定时调度]
+    H --> M[TwitterApiClient - API客户端]
 
-    I --> M[BinanceWebSocketMonitor]
-    I --> N[WebSocket连接管理]
-    I --> O[实时公告处理]
+    I --> N[BinanceWebSocketMonitor]
+    I --> O[WebSocket连接管理]
+    I --> P[实时公告处理]
 
-    J --> P[Twitter API]
-    M --> Q[Binance WebSocket API]
+    J --> Q[BinancePriceMonitor]
+    J --> R[价格变化检测]
+    J --> S[预警机制]
 
-    F --> R[钉钉机器人API]
-    E --> S[Supabase PostgreSQL]
+    K --> T[Twitter API]
+    N --> U[Binance WebSocket API]
+    Q --> V[Binance REST API]
 
-    T[环境变量 .env] --> D
-    U[HTTP健康检查 :3000] --> A
+    F --> W[钉钉机器人API]
+    E --> X[PostgreSQL数据库]
+
+    Y[环境变量 .env] --> D
+    Z[HTTP健康检查 :3000] --> A
 ```
 
 ### 核心组件
@@ -82,7 +91,7 @@ graph TB
 - **TwitterApiClient**: Twitter API客户端，OAuth2认证和推文获取
 - **特点**: 定时轮询模式，避免API限流
 
-#### 4. Binance监控模块
+#### 4. Binance公告监控模块
 - **BinanceWebSocketMonitor**: Binance WebSocket监控器
 - **功能**:
   - 实时WebSocket连接管理
@@ -91,7 +100,16 @@ graph TB
   - 公告数据实时处理
 - **特点**: 实时推送模式，低延迟接收
 
-#### 5. HTTP健康检查服务
+#### 5. Binance价格监控模块
+- **BinancePriceMonitor**: Binance价格监控器
+- **功能**:
+  - 定时获取交易对价格
+  - 价格变化检测和预警
+  - 多交易对同时监控
+  - 冷却机制防止频繁预警
+- **特点**: 定时轮询模式，智能预警
+
+#### 6. HTTP健康检查服务
 - **端点**: `http://localhost:3000/health` 和 `/status`
 - **功能**: 系统状态监控，支持外部健康检查
 
@@ -100,16 +118,22 @@ graph TB
 ### 环境变量配置
 ```bash
 # ===== 模块控制 =====
-TWITTER_ENABLED=true    # 启用/禁用Twitter监控
-BINANCE_ENABLED=true    # 启用/禁用Binance监控
+TWITTER_ENABLED=false                    # 启用/禁用Twitter监控
+BINANCE_ANNOUNCEMENT_ENABLED=true        # 启用/禁用Binance公告监控
+BINANCE_PRICE_ENABLED=false             # 启用/禁用Binance价格监控
 
 # ===== 通知配置 =====
 DINGTALK_ACCESS_TOKEN=钉钉机器人访问令牌
 
-# ===== Binance实时监控配置 =====
-# 只需要API密钥，实时WebSocket推送
+# ===== Binance公告监控配置 =====
 BINANCE_API_KEY=你的Binance_API密钥
 BINANCE_SECRET_KEY=你的Binance_Secret密钥
+
+# ===== Binance价格监控配置 =====
+BINANCE_PRICE_SYMBOLS=BTCUSDT,ETHUSDT,BNBUSDT
+BINANCE_PRICE_THRESHOLD=5.0
+BINANCE_PRICE_INTERVAL=60
+BINANCE_PRICE_COOLDOWN=3600
 
 # ===== Twitter定时监控配置 =====
 # 需要数据库存储和多API凭证轮询
@@ -160,71 +184,83 @@ MONITOR_END_TIME=23:00    # 生产环境监控结束时间（北京时间UTC+8�
 
 ### 数据库表结构
 
-> **注意**: Binance监控采用**无数据库设计**，公告数据直接推送钉钉，不存储到数据库。只有Twitter监控需要数据库支持。
+系统采用**模块化表管理**，每个模块管理自己的数据库表结构。
 
-#### 统一监控系统表结构
+#### 共享表结构
 ```sql
--- 模块管理表
-CREATE TABLE monitor_modules (
-    module_name VARCHAR(50) PRIMARY KEY,
-    status VARCHAR(20) DEFAULT 'stopped',
-    last_start_time TIMESTAMP,
-    last_stop_time TIMESTAMP,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- 监控状态表（支持多模块）
-CREATE TABLE monitor_state (
+-- 通知历史表（所有模块共享）
+CREATE TABLE notification_history (
     id SERIAL PRIMARY KEY,
-    monitor_user VARCHAR(100) NOT NULL,
     module_name VARCHAR(50) NOT NULL,
-    last_check_time TIMESTAMP,
-    last_update_time TIMESTAMP,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(monitor_user, module_name)
+    notification_type VARCHAR(50) NOT NULL,
+    content TEXT NOT NULL,
+    recipient VARCHAR(100) DEFAULT 'dingtalk',
+    status VARCHAR(20) DEFAULT 'sent',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+```
 
--- Twitter相关表
--- 刷新令牌表
-CREATE TABLE refresh_tokens (
-    username VARCHAR(50) PRIMARY KEY,
+#### Twitter监控模块表结构
+```sql
+-- Twitter刷新令牌表
+CREATE TABLE twitter_refresh_tokens (
+    username VARCHAR(255) UNIQUE NOT NULL,
     refresh_token TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- 推文存储表
-CREATE TABLE tweets (
+-- Twitter处理记录表（防重复）
+CREATE TABLE twitter_processed_records (
     id SERIAL PRIMARY KEY,
-    tweet_id VARCHAR(50) UNIQUE NOT NULL,
-    user_id VARCHAR(50),
-    username VARCHAR(100),
-    content TEXT,
-    created_at TIMESTAMP,
-    monitor_user VARCHAR(100),
-    url TEXT,
-    metrics JSONB,
-    inserted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    monitor_user VARCHAR(255) NOT NULL,
+    last_tweet_id VARCHAR(50),
+    last_check_time TIMESTAMP,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+#### Binance公告监控模块表结构
+```sql
+-- Binance处理记录表（防重复）
+CREATE TABLE binance_processed_records (
+    id SERIAL PRIMARY KEY,
+    announcement_id VARCHAR(255) NOT NULL UNIQUE,
+    title TEXT,
+    catalog_name VARCHAR(100),
+    publish_date TIMESTAMP,
+    processed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    module_name VARCHAR(50) DEFAULT 'binance_announcement'
+);
+```
+
+#### Binance价格监控模块表结构
+```sql
+-- 价格预警表
+CREATE TABLE price_alerts (
+    id SERIAL PRIMARY KEY,
+    symbol VARCHAR(20) NOT NULL,
+    alert_type VARCHAR(20) NOT NULL,
+    threshold_value DECIMAL(20, 8) NOT NULL,
+    current_price DECIMAL(20, 8),
+    change_percent DECIMAL(5, 2),
+    triggered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    is_processed BOOLEAN DEFAULT FALSE,
+    module_name VARCHAR(50) DEFAULT 'binance_price'
 );
 
--- Binance相关表
--- 公告存储表
-CREATE TABLE binance_announcements (
+-- 价格历史表
+CREATE TABLE price_history (
     id SERIAL PRIMARY KEY,
-    announcement_id VARCHAR(50) UNIQUE NOT NULL,
-    title TEXT,
-    content TEXT,
-    publish_time TIMESTAMP,
-    language VARCHAR(10),
-    catalog_id INTEGER,
-    catalog_name VARCHAR(100),
-    type VARCHAR(50),
-    priority INTEGER,
-    tags JSONB,
-    url TEXT,
-    raw_data JSONB,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    symbol VARCHAR(20) NOT NULL,
+    price DECIMAL(20, 8) NOT NULL,
+    volume DECIMAL(20, 8),
+    change_24h DECIMAL(5, 2),
+    recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    module_name VARCHAR(50) DEFAULT 'binance_price'
+);
 ```
 
 ## 核心工作流程
@@ -1226,25 +1262,37 @@ multi-source-monitor/
 │   ├── core/
 │   │   ├── config.js              # 统一配置管理器
 │   │   ├── database.js            # 统一数据库管理器
-│   │   └── notifier.js            # 统一通知管理器
-│   └── monitors/
-│       ├── index.js               # 监控模块统一入口
-│       ├── base/
-│       │   └── BaseMonitor.js     # 监控基类
-│       ├── twitter/
-│       │   ├── TwitterMonitor.js          # Twitter监控器
-│       │   ├── TwitterApiClient.js       # Twitter API客户端
-│       │   ├── TwitterScheduler.js       # Twitter调度器
-│       │   ├── TwitterConfig.js          # Twitter配置管理
-│       │   └── TwitterAuthenticator.js   # Twitter认证工具
-│       └── binance/
-│           └── BinanceWebSocketMonitor.js # Binance WebSocket监控器
+│   │   ├── schema-manager.js      # 数据库表结构管理器
+│   │   ├── notifier.js            # 统一通知管理器
+│   │   └── logger.js              # 统一日志管理器
+│   ├── monitors/
+│   │   ├── registry.js            # 监控模块注册表
+│   │   ├── base/
+│   │   │   └── BaseMonitor.js     # 监控基类
+│   │   ├── twitter/
+│   │   │   ├── TwitterMonitor.js          # Twitter监控器
+│   │   │   ├── TwitterApiClient.js       # Twitter API客户端
+│   │   │   ├── TwitterScheduler.js       # Twitter调度器
+│   │   │   ├── TwitterAuthenticator.js   # Twitter认证工具
+│   │   │   ├── schema.js                 # Twitter表结构
+│   │   │   └── README.md                 # Twitter模块文档
+│   │   ├── binance-announcement/
+│   │   │   ├── BinanceWebSocketMonitor.js # Binance公告监控器
+│   │   │   ├── schema.js                 # Binance公告表结构
+│   │   │   └── README.md                 # Binance公告模块文档
+│   │   └── binance-price/
+│   │       ├── BinancePriceMonitor.js    # Binance价格监控器
+│   │       ├── schema.js                 # Binance价格表结构
+│   │       └── README.md                 # Binance价格模块文档
+│   └── services/
+│       └── health.js              # 健康检查服务
 ├── tools/
 │   └── authenticate.js            # Twitter认证工具
 ├── tests/
 │   └── *.js                      # 测试文件
 ├── data/                         # 数据存储目录
 ├── .env                          # 环境变量配置
+├── .env.example                  # 环境变量示例
 ├── package.json                  # 项目配置
 ├── README.md                     # 项目说明
 └── TECHNICAL_DOCUMENTATION.md   # 技术文档
@@ -1252,7 +1300,16 @@ multi-source-monitor/
 
 ## 版本历史
 
-### v3.0.0 (当前版本) - 多源监控架构
+### v4.0.0 (当前版本) - 模块化架构重构
+- ✅ **模块分离** - Binance公告监控和价格监控独立为两个模块
+- ✅ **模块内表管理** - 每个模块管理自己的数据库表结构
+- ✅ **表结构管理器** - 统一的模块化表结构管理
+- ✅ **三源监控支持** - Twitter + Binance公告 + Binance价格
+- ✅ **独立配置** - 每个模块独立的环境变量配置
+- ✅ **模块文档** - 每个模块独立的README文档
+- ✅ **架构清晰** - 更清晰的模块职责分离
+
+### v3.0.0 (历史版本) - 多源监控架构
 - ✅ **多源监控支持** - Twitter + Binance双监控源
 - ✅ **模块化架构** - 基于BaseMonitor的可扩展架构
 - ✅ **统一编排器** - MonitorOrchestrator统一管理所有监控模块

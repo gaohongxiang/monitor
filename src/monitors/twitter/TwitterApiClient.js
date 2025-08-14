@@ -8,12 +8,12 @@ import { SocksProxyAgent } from 'socks-proxy-agent';
 import { BitBrowser } from './BitBrowser.js';
 
 /**
- * X OAuth2认证工具类
- * 用于处理X的OAuth2.0认证流程，获取和管理refresh token
+ * Twitter OAuth2认证工具类
+ * 用于处理Twitter的OAuth2.0认证流程，获取和管理refresh token
  */
-export class XAuthenticator {
+export class TwitterAuthenticator {
     /**
-     * XAuthenticator构造函数
+     * TwitterAuthenticator构造函数
      * @param {Object} browserUtil - 浏览器工具实例
      * @param {Object} proxy - 代理对象
      * @param {Object} client - Twitter API客户端
@@ -27,30 +27,30 @@ export class XAuthenticator {
     }
 
     /**
-     * 创建并初始化XAuthenticator实例
+     * 创建并初始化TwitterAuthenticator实例
      * @static
      * @param {Object} params - 初始化参数
-     * @param {string} params.xClientId - 凭证Id
-     * @param {string} params.xClientSecret - 凭证密钥
+     * @param {string} params.twitterClientId - 凭证Id
+     * @param {string} params.twitterClientSecret - 凭证密钥
      * @param {string} params.browserId - 指纹浏览器Id
      * @param {string} params.socksProxyUrl - 代理
-     * @returns {Promise<XAuthenticator>} 初始化完成的实例
+     * @returns {Promise<TwitterAuthenticator>} 初始化完成的实例
      * @throws {Error} 缺少必要的配置时抛出错误
      */
-    static async create({ xClientId, xClientSecret, browserId, socksProxyUrl }) {
+    static async create({ twitterClientId, twitterClientSecret, browserId, socksProxyUrl }) {
         // 使用共享的浏览器工具创建函数
         const browserUtil = await BitBrowser.create({ browserId });
 
         // 初始化API客户端
         const proxy = new SocksProxyAgent(socksProxyUrl);
         const client = new TwitterApi({
-            clientId: xClientId,
-            clientSecret: xClientSecret,
+            clientId: twitterClientId,
+            clientSecret: twitterClientSecret,
             httpAgent: proxy
         });
 
-        // 创建XAuthenticator实例
-        const instance = new XAuthenticator(browserUtil, proxy, client);
+        // 创建TwitterAuthenticator实例
+        const instance = new TwitterAuthenticator(browserUtil, proxy, client);
 
         return instance;
     }
@@ -58,16 +58,16 @@ export class XAuthenticator {
     /**
      * 执行OAuth2授权流程并保存refresh token
      * @param {Object} params - 授权参数
-     * @param {string} params.xUserName - X用户名
-     * @param {string} params.xRedirectUri - 重定向URI
+     * @param {string} params.twitterUserName - Twitter用户名
+     * @param {string} params.twitterRedirectUri - 重定向URI
      * @param {Object} database - 数据库管理器
      * @returns {Promise<boolean>} 是否授权成功
      */
-    async authorizeAndSaveToken({ xUserName, xRedirectUri }, database) {
+    async authorizeAndSaveToken({ twitterUserName, twitterRedirectUri }, database) {
         try {
             // 获取授权URL
             const { url, codeVerifier } = this.client.generateOAuth2AuthLink(
-                xRedirectUri,
+                twitterRedirectUri,
                 {
                     scope: [
                         'offline.access',
@@ -96,12 +96,12 @@ export class XAuthenticator {
             const { refreshToken } = await this.client.loginWithOAuth2({
                 code,
                 codeVerifier,
-                redirectUri: xRedirectUri
+                redirectUri: twitterRedirectUri
             });
 
             // 保存 refresh token 到数据库
-            await database.saveRefreshToken(xUserName, refreshToken);
-            console.log(`✅ refreshToken已保存到数据库 [用户: ${xUserName}]`);
+            await database.saveRefreshToken(twitterUserName, refreshToken);
+            console.log(`✅ refreshToken已保存到数据库 [用户: ${twitterUserName}]`);
 
             return true;
 
@@ -128,6 +128,7 @@ export class TwitterApiClient {
         this.requestCount = 0;
         this.dailyRequestLimit = credentials.dailyRequestsPerApi || 3;
         this.cachedUserInfo = null; // 缓存用户信息，避免重复API请求
+
     }
 
     /**
@@ -139,7 +140,7 @@ export class TwitterApiClient {
                 return true;
             }
 
-            console.log(`初始化Twitter API客户端: ${this.credentials.xUserName}`);
+            console.log(`初始化Twitter API客户端: ${this.credentials.twitterUserName}`);
 
             // 初始化代理
             if (this.credentials.socksProxyUrl) {
@@ -150,11 +151,11 @@ export class TwitterApiClient {
             await this.ensureValidAccessToken();
 
             this.isInitialized = true;
-            console.log(`✅ Twitter API客户端初始化成功: ${this.credentials.xUserName}`);
+            console.log(`✅ Twitter API客户端初始化成功: ${this.credentials.twitterUserName}`);
             return true;
 
         } catch (error) {
-            console.error(`❌ Twitter API客户端初始化失败: ${this.credentials.xUserName}`, error);
+            console.error(`❌ Twitter API客户端初始化失败: ${this.credentials.twitterUserName}`, error);
             return false;
         }
     }
@@ -165,16 +166,16 @@ export class TwitterApiClient {
     async ensureValidAccessToken() {
         try {
             // 从数据库获取刷新令牌
-            const refreshToken = await this.database.getRefreshToken(this.credentials.xUserName);
+            const refreshToken = await this.database.getRefreshToken(this.credentials.twitterUserName);
 
             if (!refreshToken) {
-                throw new Error(`未找到用户 ${this.credentials.xUserName} 的刷新令牌`);
+                throw new Error(`未找到用户 ${this.credentials.twitterUserName} 的刷新令牌`);
             }
 
             // 初始化 Twitter API 客户端
             const baseClient = new TwitterApi({
-                clientId: this.credentials.xClientId,
-                clientSecret: this.credentials.xClientSecret,
+                clientId: this.credentials.twitterClientId,
+                clientSecret: this.credentials.twitterClientSecret,
                 httpAgent: this.proxy
             });
 
@@ -184,17 +185,17 @@ export class TwitterApiClient {
                 refreshToken: newRefreshToken
             } = await baseClient.refreshOAuth2Token(refreshToken);
 
-            console.log(`✅ 刷新令牌成功 [用户: ${this.credentials.xUserName}]`);
+            console.log(`✅ 刷新令牌成功 [用户: ${this.credentials.twitterUserName}]`);
 
             // 保存新的refreshToken到数据库
-            await this.database.saveRefreshToken(this.credentials.xUserName, newRefreshToken);
-            console.log(`✅ 新refreshToken已保存到数据库 [用户: ${this.credentials.xUserName}]`);
+            await this.database.saveRefreshToken(this.credentials.twitterUserName, newRefreshToken);
+            console.log(`✅ 新refreshToken已保存到数据库 [用户: ${this.credentials.twitterUserName}]`);
 
             // 设置客户端
             this.client = refreshedClient;
 
         } catch (error) {
-            console.error(`❌ 刷新访问令牌失败: ${this.credentials.xUserName}`, error);
+            console.error(`❌ 刷新访问令牌失败: ${this.credentials.twitterUserName}`, error);
             throw error;
         }
     }
@@ -405,7 +406,7 @@ export class TwitterApiClient {
         this.requestCount++;
         this.lastRequestTime = Date.now();
 
-        console.log(`API请求计数: ${this.requestCount}/${this.dailyRequestLimit} (${this.credentials.xUserName})`);
+        console.log(`API请求计数: ${this.requestCount}/${this.dailyRequestLimit} (${this.credentials.twitterUserName})`);
     }
 
     /**
@@ -414,7 +415,7 @@ export class TwitterApiClient {
      */
     getRequestStats() {
         return {
-            username: this.credentials.xUserName,
+            username: this.credentials.twitterUserName,
             requestCount: this.requestCount,
             dailyLimit: this.dailyRequestLimit,
             remainingRequests: Math.max(0, this.dailyRequestLimit - this.requestCount),
@@ -429,7 +430,7 @@ export class TwitterApiClient {
     resetRequestCount() {
         this.requestCount = 0;
         this.lastRequestTime = 0;
-        console.log(`重置请求计数: ${this.credentials.xUserName}`);
+        console.log(`重置请求计数: ${this.credentials.twitterUserName}`);
     }
 
     /**
@@ -440,10 +441,10 @@ export class TwitterApiClient {
             this.isInitialized = false;
             this.client = null;
             this.cachedUserInfo = null;
-            console.log(`Twitter API客户端已关闭: ${this.credentials.xUserName}`);
+            console.log(`Twitter API客户端已关闭: ${this.credentials.twitterUserName}`);
 
         } catch (error) {
-            console.error(`关闭Twitter API客户端时出错: ${this.credentials.xUserName}`, error);
+            console.error(`关闭Twitter API客户端时出错: ${this.credentials.twitterUserName}`, error);
         }
     }
 
@@ -462,11 +463,10 @@ export class TwitterApiClient {
             return !!result;
 
         } catch (error) {
-            console.error(`测试Twitter API连接失败: ${this.credentials.xUserName}`, error);
+            console.error(`测试Twitter API连接失败: ${this.credentials.twitterUserName}`, error);
             return false;
         }
     }
 }
 
-// 为了向后兼容，导出XClient别名
-export const XClient = TwitterApiClient;
+// TwitterApiClient和TwitterAuthenticator类已经通过export class导出

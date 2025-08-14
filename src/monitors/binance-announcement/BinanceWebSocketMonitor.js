@@ -48,9 +48,13 @@ export class BinanceWebSocketMonitor extends BaseMonitor {
         this.connectionStartTime = null;
         this.dailyReconnectTimeout = null;
         
-        // 去重机制
-        this.processedAnnouncements = new Set(); // 存储已处理的公告ID
-        this.announcementCacheTimeout = 5 * 60 * 1000; // 5分钟缓存
+        // 去重机制 - 混合内存+数据库方案
+        this.processedAnnouncements = new Set(); // 内存缓存，用于快速查询
+        this.announcementCacheTimeout = 24 * 60 * 60 * 1000; // 24小时缓存
+        this.memoryCache = {
+            maxSize: 1000, // 最大缓存1000条记录
+            cleanupInterval: 60 * 60 * 1000 // 每小时清理一次过期缓存
+        };
 
         // 统计信息
         this.stats = {
@@ -73,9 +77,84 @@ export class BinanceWebSocketMonitor extends BaseMonitor {
      */
     async onStart() {
         console.log('🚀 启动Binance WebSocket监控器...');
+
+        // 从数据库加载最近的已处理公告到内存缓存
+        await this.loadRecentProcessedAnnouncements();
+
+        // 启动内存缓存清理定时器
+        this.startMemoryCacheCleanup();
+
         // 同步内部状态与基础监控器状态
         this.isRunning = true;
         await this.connect();
+    }
+
+    /**
+     * 从数据库加载最近处理的公告到内存缓存
+     */
+    async loadRecentProcessedAnnouncements() {
+        try {
+            console.log('📥 从数据库加载最近处理的公告...');
+
+            if (!this.sharedServices || !this.sharedServices.database) {
+                console.warn('⚠️  数据库服务未配置，跳过加载已处理公告');
+                return;
+            }
+
+            const recentAnnouncements = await this.sharedServices.database.getRecentProcessedAnnouncements(
+                'binance_announcement',
+                24 // 加载最近24小时的记录
+            );
+
+            // 清空现有缓存并加载新数据
+            this.processedAnnouncements.clear();
+            recentAnnouncements.forEach(announcementId => {
+                this.processedAnnouncements.add(announcementId);
+            });
+
+            console.log(`✅ 已加载 ${recentAnnouncements.length} 条最近处理的公告到内存缓存`);
+
+        } catch (error) {
+            console.error('❌ 加载最近处理公告失败:', error.message);
+        }
+    }
+
+    /**
+     * 启动内存缓存清理定时器
+     */
+    startMemoryCacheCleanup() {
+        // 每小时清理一次内存缓存
+        this.memoryCacheCleanupInterval = setInterval(() => {
+            this.cleanupMemoryCache();
+        }, this.memoryCache.cleanupInterval);
+
+        console.log('🧹 内存缓存清理定时器已启动');
+    }
+
+    /**
+     * 清理内存缓存，保持缓存大小在合理范围内
+     */
+    cleanupMemoryCache() {
+        try {
+            const currentSize = this.processedAnnouncements.size;
+
+            if (currentSize > this.memoryCache.maxSize) {
+                // 如果缓存过大，清空一半（简单的LRU策略）
+                const itemsToRemove = Math.floor(currentSize / 2);
+                const iterator = this.processedAnnouncements.values();
+
+                for (let i = 0; i < itemsToRemove; i++) {
+                    const item = iterator.next();
+                    if (!item.done) {
+                        this.processedAnnouncements.delete(item.value);
+                    }
+                }
+
+                console.log(`🧹 内存缓存清理完成: ${currentSize} -> ${this.processedAnnouncements.size}`);
+            }
+        } catch (error) {
+            console.error('❌ 内存缓存清理失败:', error.message);
+        }
     }
 
     /**
@@ -100,6 +179,11 @@ export class BinanceWebSocketMonitor extends BaseMonitor {
         if (this.dailyReconnectTimeout) {
             clearTimeout(this.dailyReconnectTimeout);
             this.dailyReconnectTimeout = null;
+        }
+
+        if (this.memoryCacheCleanupInterval) {
+            clearInterval(this.memoryCacheCleanupInterval);
+            this.memoryCacheCleanupInterval = null;
         }
 
         // 关闭WebSocket连接
@@ -498,11 +582,26 @@ export class BinanceWebSocketMonitor extends BaseMonitor {
 
             // 生成消息唯一标识符用于去重
             const messageId = this.generateMessageId(message);
-            
-            // 检查是否已经处理过这条消息
+
+            // 先检查内存缓存（快速检查）
             if (this.processedAnnouncements.has(messageId)) {
-                console.log(`⚠️  消息已处理过，跳过重复处理: ${messageId}`);
+                console.log(`⚠️  消息已处理过（内存缓存），跳过重复处理: ${messageId}`);
                 return;
+            }
+
+            // 检查数据库（确保程序重启后的去重）
+            if (this.sharedServices && this.sharedServices.database) {
+                const isProcessed = await this.sharedServices.database.isAnnouncementProcessed(
+                    messageId,
+                    'binance_announcement'
+                );
+
+                if (isProcessed) {
+                    console.log(`⚠️  消息已处理过（数据库），跳过重复处理: ${messageId}`);
+                    // 同时添加到内存缓存，避免下次再查数据库
+                    this.processedAnnouncements.add(messageId);
+                    return;
+                }
             }
 
             // 验证消息是否包含有效的公告内容
@@ -511,13 +610,27 @@ export class BinanceWebSocketMonitor extends BaseMonitor {
                 return;
             }
 
-            // 标记消息为已处理
+            // 解析公告数据用于保存
+            let announcementData = {};
+            if (message.type === 'DATA' && message.data) {
+                try {
+                    announcementData = JSON.parse(message.data);
+                } catch (parseError) {
+                    console.warn('⚠️  解析公告数据失败:', parseError.message);
+                }
+            }
+
+            // 标记消息为已处理（内存缓存）
             this.processedAnnouncements.add(messageId);
-            
-            // 设置定时清理，避免内存泄漏
-            setTimeout(() => {
-                this.processedAnnouncements.delete(messageId);
-            }, this.announcementCacheTimeout);
+
+            // 保存到数据库
+            if (this.sharedServices && this.sharedServices.database) {
+                await this.sharedServices.database.saveProcessedAnnouncement(
+                    messageId,
+                    announcementData,
+                    'binance_announcement'
+                );
+            }
 
             this.stats.announcementsProcessed++;
 

@@ -313,8 +313,113 @@ export class DatabaseMigrationManager {
             }
         });
 
+        // 版本 1.5.0 - 价格预警功能
+        this.migrations.set('1.5.0', {
+            version: '1.5.0',
+            description: '添加Binance价格预警功能',
+            up: async (client) => {
+                // 创建价格预警表
+                await client.query(`
+                    CREATE TABLE IF NOT EXISTS price_alerts (
+                        id SERIAL PRIMARY KEY,
+                        symbol VARCHAR(20) NOT NULL,
+                        base_price DECIMAL(20,8) NOT NULL,
+                        current_price DECIMAL(20,8),
+                        alert_threshold DECIMAL(5,2) DEFAULT 10.00,
+                        last_alert_time TIMESTAMP,
+                        alert_count INTEGER DEFAULT 0,
+                        is_active BOOLEAN DEFAULT true,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE(symbol)
+                    )
+                `);
+
+                // 创建价格历史表（用于趋势分析）
+                await client.query(`
+                    CREATE TABLE IF NOT EXISTS price_history (
+                        id SERIAL PRIMARY KEY,
+                        symbol VARCHAR(20) NOT NULL,
+                        price DECIMAL(20,8) NOT NULL,
+                        change_24h DECIMAL(10,4),
+                        change_percent_24h DECIMAL(8,4),
+                        volume_24h DECIMAL(20,8),
+                        recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                `);
+
+                // 创建预警历史表
+                await client.query(`
+                    CREATE TABLE IF NOT EXISTS alert_history (
+                        id SERIAL PRIMARY KEY,
+                        symbol VARCHAR(20) NOT NULL,
+                        alert_type VARCHAR(50) NOT NULL,
+                        trigger_price DECIMAL(20,8) NOT NULL,
+                        base_price DECIMAL(20,8) NOT NULL,
+                        change_percent DECIMAL(8,4) NOT NULL,
+                        message TEXT,
+                        notification_sent BOOLEAN DEFAULT false,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                `);
+
+                // 创建索引
+                await client.query(`
+                    CREATE INDEX IF NOT EXISTS idx_price_alerts_symbol 
+                    ON price_alerts(symbol, is_active)
+                `);
+
+                await client.query(`
+                    CREATE INDEX IF NOT EXISTS idx_price_history_symbol_time 
+                    ON price_history(symbol, recorded_at)
+                `);
+
+                await client.query(`
+                    CREATE INDEX IF NOT EXISTS idx_alert_history_symbol_time 
+                    ON alert_history(symbol, created_at)
+                `);
+
+                await client.query(`
+                    CREATE INDEX IF NOT EXISTS idx_alert_history_type 
+                    ON alert_history(alert_type, created_at)
+                `);
+
+                // 注册价格预警模块
+                await client.query(`
+                    INSERT INTO monitor_modules (module_name, module_type, enabled, created_at, updated_at)
+                    VALUES ('binance-price-alert', 'price_monitor', true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    ON CONFLICT (module_name) DO NOTHING
+                `);
+
+                // 添加默认数据保留策略
+                await client.query(`
+                    INSERT INTO data_retention_policies (table_name, retention_days, enabled)
+                    VALUES 
+                        ('price_history', 90, true),
+                        ('alert_history', 30, true)
+                    ON CONFLICT DO NOTHING
+                `);
+            },
+            down: async (client) => {
+                await client.query('DROP INDEX IF EXISTS idx_alert_history_type');
+                await client.query('DROP INDEX IF EXISTS idx_alert_history_symbol_time');
+                await client.query('DROP INDEX IF EXISTS idx_price_history_symbol_time');
+                await client.query('DROP INDEX IF EXISTS idx_price_alerts_symbol');
+                await client.query('DROP TABLE IF EXISTS alert_history');
+                await client.query('DROP TABLE IF EXISTS price_history');
+                await client.query('DROP TABLE IF EXISTS price_alerts');
+                await client.query(`
+                    DELETE FROM monitor_modules WHERE module_name = 'binance-price-alert'
+                `);
+                await client.query(`
+                    DELETE FROM data_retention_policies 
+                    WHERE table_name IN ('price_history', 'alert_history')
+                `);
+            }
+        });
+
         // 设置目标版本为最新版本
-        this.targetVersion = '1.4.0';
+        this.targetVersion = '1.5.0';
     }
 
     /**

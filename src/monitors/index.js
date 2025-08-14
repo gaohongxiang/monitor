@@ -5,6 +5,7 @@
 
 // Binance监控模块
 export { BinanceWebSocketMonitor } from './binance/BinanceWebSocketMonitor.js';
+export { BinancePriceAlertMonitor } from './binance/BinancePriceAlertMonitor.js';
 
 // Twitter监控模块
 export { TwitterMonitor } from './twitter/TwitterMonitor.js';
@@ -18,7 +19,7 @@ export { BaseScheduler } from './base/BaseScheduler.js';
  * @returns {Array} 监控器名称列表
  */
 export function getAvailableMonitors() {
-    return ['binance', 'twitter'];
+    return ['binance', 'binance-price-alert', 'twitter'];
 }
 
 /**
@@ -33,6 +34,10 @@ export async function createMonitor(name, sharedServices, config) {
         case 'binance':
             const { BinanceWebSocketMonitor } = await import('./binance/BinanceWebSocketMonitor.js');
             return new BinanceWebSocketMonitor(sharedServices, config);
+
+        case 'binance-price-alert':
+            const { BinancePriceAlertMonitor } = await import('./binance/BinancePriceAlertMonitor.js');
+            return new BinancePriceAlertMonitor(sharedServices, config);
 
         case 'twitter':
             const { TwitterMonitor } = await import('./twitter/TwitterMonitor.js');

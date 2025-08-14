@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { XAuthenticator } from './TwitterApiClient.js';
+import { TwitterAuthenticator as TwitterOAuthenticator } from './TwitterApiClient.js';
 import { unifiedDatabaseManager } from '../../core/database.js';
 import { unifiedConfigManager } from '../../core/config.js';
 
@@ -58,7 +58,7 @@ export class TwitterAuthenticator {
                 const credential = allCredentials[i];
                 const progress = `[${i + 1}/${allCredentials.length}]`;
                 
-                console.log(`${progress} 认证Twitter凭证: ${credential.xUserName} (${credential.monitorUser})`);
+                console.log(`${progress} 认证Twitter凭证: ${credential.twitterUserName} (${credential.monitorUser})`);
                 
                 const result = await this.authenticateCredential(credential);
                 this.results.push(result);
@@ -93,7 +93,7 @@ export class TwitterAuthenticator {
      */
     async authenticateCredential(credential) {
         const result = {
-            credentialId: credential.xUserName,
+            credentialId: credential.twitterUserName,
             monitorUser: credential.monitorUser,
             success: false,
             error: null,
@@ -102,7 +102,7 @@ export class TwitterAuthenticator {
 
         try {
             // 检查是否已经认证
-            const existingToken = await unifiedDatabaseManager.getRefreshToken(credential.xUserName);
+            const existingToken = await unifiedDatabaseManager.getRefreshToken(credential.twitterUserName);
             if (existingToken) {
                 console.log(`   ⚠️  用户已存在refreshToken，跳过认证`);
                 result.success = true;
@@ -112,9 +112,9 @@ export class TwitterAuthenticator {
 
             // 创建Twitter OAuth认证器
             console.log(`   🌐 创建Twitter OAuth认证器...`);
-            const authenticator = await XAuthenticator.create({
-                xClientId: credential.xClientId,
-                xClientSecret: credential.xClientSecret,
+            const authenticator = await TwitterOAuthenticator.create({
+                twitterClientId: credential.twitterClientId,
+                twitterClientSecret: credential.twitterClientSecret,
                 browserId: credential.bitbrowserId,
                 socksProxyUrl: credential.socksProxyUrl
             });
@@ -128,8 +128,8 @@ export class TwitterAuthenticator {
             
             // 执行认证
             const authSuccess = await authenticator.authorizeAndSaveToken({
-                xUserName: credential.xUserName,
-                xRedirectUri: credential.xRedirectUri
+                twitterUserName: credential.twitterUserName,
+                twitterRedirectUri: credential.twitterRedirectUri
             }, unifiedDatabaseManager);
             
             if (authSuccess !== false) {
@@ -173,26 +173,26 @@ export class TwitterAuthenticator {
             const statusDetails = [];
             
             for (const credential of allCredentials) {
-                const refreshToken = await unifiedDatabaseManager.getRefreshToken(credential.xUserName);
-                
+                const refreshToken = await unifiedDatabaseManager.getRefreshToken(credential.twitterUserName);
+
                 if (refreshToken) {
-                    console.log(`✅ ${credential.xUserName} (${credential.monitorUser})`);
+                    console.log(`✅ ${credential.twitterUserName} (${credential.monitorUser})`);
                     console.log(`   状态: 已认证 | Token存在`);
-                    
+
                     statusDetails.push({
-                        id: credential.xUserName,
+                        id: credential.twitterUserName,
                         user: credential.monitorUser,
                         authenticated: true,
                         status: 'active'
                     });
-                    
+
                     authenticatedCount++;
                 } else {
-                    console.log(`❌ ${credential.xUserName} (${credential.monitorUser})`);
+                    console.log(`❌ ${credential.twitterUserName} (${credential.monitorUser})`);
                     console.log(`   状态: 未认证 | 需要运行认证流程`);
-                    
+
                     statusDetails.push({
-                        id: credential.xUserName,
+                        id: credential.twitterUserName,
                         user: credential.monitorUser,
                         authenticated: false,
                         status: 'not_authenticated'
@@ -231,7 +231,8 @@ export class TwitterAuthenticator {
 
             if (authenticatedCount < allCredentials.length) {
                 console.log('💡 下一步操作:');
-                console.log('   - 运行 `npm run auth` 来认证所有未认证的Twitter凭证');
+                console.log('   - 启动BitBrowser指纹浏览器');
+                console.log('   - 运行 `npm run twitter:refresh-token:auth` 来进行刷新令牌认证');
                 console.log('   - 确保环境变量 API_CREDENTIALS 配置正确');
             } else {
                 console.log('🎉 所有Twitter凭证都已认证完成！');

@@ -5,6 +5,7 @@
 export class TwitterConfig {
     constructor(config) {
         this.config = config;
+
     }
 
     /**
@@ -13,16 +14,18 @@ export class TwitterConfig {
      */
     validate() {
         if (!this.config.apiCredentials || this.config.apiCredentials.length === 0) {
-            console.error('Twitter模块缺少API凭证配置');
+            console.log('❌ Twitter模块缺少API凭证配置');
+            console.log('💡 请在.env文件中配置API_CREDENTIALS');
             return false;
         }
 
         // 验证每个凭证的必需字段
         for (const credential of this.config.apiCredentials) {
-            const requiredFields = ['xClientId', 'xClientSecret', 'xRedirectUri', 'xUserName', 'monitorUser'];
+            const requiredFields = ['twitterClientId', 'twitterClientSecret', 'twitterRedirectUri', 'twitterUserName', 'monitorUser'];
             for (const field of requiredFields) {
                 if (!credential[field]) {
-                    console.error(`Twitter凭证缺少必需字段: ${field}`);
+                    console.log(`❌ Twitter凭证缺少必需字段: ${field}`);
+                    console.log('💡 请检查API_CREDENTIALS配置格式');
                     return false;
                 }
             }

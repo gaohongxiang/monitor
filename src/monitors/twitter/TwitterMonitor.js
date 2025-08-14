@@ -5,18 +5,21 @@
 import { BaseMonitor } from '../base/BaseMonitor.js';
 import { TwitterScheduler } from './TwitterScheduler.js';
 import { TwitterConfig } from './TwitterConfig.js';
-import { TwitterApiClient, XAuthenticator } from './TwitterApiClient.js';
+import { TwitterApiClient } from './TwitterApiClient.js';
 import fs from 'fs';
 import path from 'path';
 
 export class TwitterMonitor extends BaseMonitor {
     constructor(sharedServices, config) {
+        // config参数现在直接是Twitter模块的配置
         super('twitter', sharedServices, config);
 
         this.twitterConfig = new TwitterConfig(config);
         this.apiClients = new Map();
         this.dataDir = './data/monitor';
         this.scheduler = null;
+
+
 
         // 初始化数据目录
         this.initializeDataStorage();
@@ -29,7 +32,26 @@ export class TwitterMonitor extends BaseMonitor {
         try {
             // 初始化Twitter配置
             if (!this.twitterConfig.validate()) {
-                throw new Error('Twitter配置验证失败');
+                console.log('');
+                console.log('🚨 Twitter模块配置不完整！');
+                console.log('📋 请按以下步骤完成配置：');
+                console.log('');
+                console.log('1️⃣ 确保已配置Twitter API凭证：');
+                console.log('   - TWITTER_CLIENT_ID');
+                console.log('   - TWITTER_CLIENT_SECRET');
+                console.log('   - API_CREDENTIALS (JSON格式)');
+                console.log('');
+                console.log('2️⃣ 启动BitBrowser指纹浏览器');
+                console.log('');
+                console.log('3️⃣ 进行刷新令牌认证：');
+                console.log('   npm run twitter:refresh-token:auth');
+                console.log('');
+                console.log('4️⃣ 认证完成后重新启动系统：');
+                console.log('   npm run dev');
+                console.log('');
+                console.log('📚 详细配置步骤请参考：src/monitors/twitter/README.md');
+                console.log('');
+                throw new Error('Twitter配置验证失败 - 需要先完成API凭证配置和OAuth认证');
             }
 
             // 初始化API客户端
@@ -37,8 +59,27 @@ export class TwitterMonitor extends BaseMonitor {
 
             for (const credential of credentials) {
                 const client = new TwitterApiClient(credential, this.getDatabase());
-                await client.initialize();
-                this.apiClients.set(credential.xUserName, client);
+
+                try {
+                    await client.initialize();
+                    this.apiClients.set(credential.twitterUserName, client);
+                } catch (error) {
+                    if (error.message.includes('refreshToken')) {
+                        console.log('');
+                        console.log('🔐 检测到Twitter认证问题！');
+                        console.log(`👤 用户: ${credential.monitorUser}`);
+                        console.log('');
+                        console.log('🛠️ 解决步骤：');
+                        console.log('1. 确保BitBrowser指纹浏览器已启动');
+                        console.log('2. 进行刷新令牌认证: npm run twitter:refresh-token:auth');
+                        console.log('3. 完成OAuth认证流程');
+                        console.log('4. 重新启动系统: npm run dev');
+                        console.log('');
+                        console.log('📚 详细说明请参考: src/monitors/twitter/README.md');
+                        console.log('');
+                    }
+                    throw error;
+                }
             }
 
             // 创建调度器
@@ -47,7 +88,10 @@ export class TwitterMonitor extends BaseMonitor {
             this.logger.info('Twitter监控模块初始化完成');
 
         } catch (error) {
-            this.logger.error('Twitter监控模块初始化失败', { error: error.message });
+            // 如果是配置验证失败，错误信息已经在上面显示了，这里不重复显示
+            if (!error.message.includes('Twitter配置验证失败')) {
+                this.logger.error('Twitter监控模块初始化失败', { error: error.message });
+            }
             throw error;
         }
     }
@@ -258,30 +302,18 @@ export class TwitterMonitor extends BaseMonitor {
             // 处理每条推文
             for (const tweet of tweets) {
                 try {
-                    // 保存推文到数据库
-                    const saved = await database.saveTweet({
-                        tweet_id: tweet.id,
-                        user_id: tweet.author_id,
-                        username: monitorUser,
-                        content: tweet.text,
-                        created_at: new Date(tweet.createdAt),
-                        monitor_user: monitorUser,
-                        url: tweet.url,
-                        metrics: tweet.metrics
-                    });
+                    // 直接发送通知，不保存推文到数据库
+                    newTweets++;
 
-                    if (saved) {
-                        newTweets++;
-
-                        // 更新最新推文时间
-                        const tweetTime = new Date(tweet.createdAt);
-                        if (!latestTweetTime || tweetTime > new Date(latestTweetTime)) {
-                            latestTweetTime = tweet.createdAt;
-                        }
-
-                        // 发送通知
-                        await this.sendTweetNotification(tweet, monitorUser);
+                    // 更新最新推文时间
+                    const tweetTime = new Date(tweet.createdAt);
+                    if (!latestTweetTime || tweetTime > new Date(latestTweetTime)) {
+                        latestTweetTime = tweet.createdAt;
                     }
+
+                    // 发送通知
+                    await this.sendTweetNotification(tweet, monitorUser);
+
                 } catch (error) {
                     this.logger.error(`处理推文失败: ${tweet.id}`, { error: error.message });
                 }
@@ -394,13 +426,13 @@ export class TwitterMonitor extends BaseMonitor {
         }
         
         return {
-            xMonitorNickName: nickname,
+            twitterMonitorNickName: nickname,
             apiCredentials: userCredentials.map(cred => ({
-                id: cred.xUserName,
-                xClientId: cred.xClientId,
-                xClientSecret: cred.xClientSecret,
-                xRedirectUri: cred.xRedirectUri,
-                xUserName: cred.xUserName,
+                id: cred.twitterUserName,
+                twitterClientId: cred.twitterClientId,
+                twitterClientSecret: cred.twitterClientSecret,
+                twitterRedirectUri: cred.twitterRedirectUri,
+                twitterUserName: cred.twitterUserName,
                 bitbrowserId: cred.bitbrowserId,
                 socksProxyUrl: cred.socksProxyUrl
             }))
@@ -426,10 +458,10 @@ export class TwitterMonitor extends BaseMonitor {
 
             const credentialIndex_safe = credentialIndex % userCredentials.length;
             const credential = userCredentials[credentialIndex_safe];
-            const client = this.apiClients.get(credential.xUserName);
-            
+            const client = this.apiClients.get(credential.twitterUserName);
+
             if (!client) {
-                throw new Error(`未找到用户 ${credential.xUserName} 的API客户端`);
+                throw new Error(`未找到用户 ${credential.twitterUserName} 的API客户端`);
             }
 
             // 执行监控检查

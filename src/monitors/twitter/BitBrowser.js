@@ -1,8 +1,19 @@
 /**
  * BitBrowser指纹浏览器工具类
  * Twitter专用的浏览器自动化工具
+ * bitbrowser api : https://doc.bitbrowser.cn/api-jie-kou-wen-dang/liu-lan-qi-jie-kou
+ * playwright文档: https://playwright.dev/docs/library
  */
-import { chromium } from 'playwright';
+import playwright from 'playwright';
+import axios from 'axios';
+
+const bitbrowserUrl = 'http://127.0.0.1:54345';
+
+/**
+ * 睡眠函数
+ * @param {number} seconds - 睡眠秒数
+ */
+const sleep = (seconds) => new Promise(resolve => setTimeout(resolve, seconds * 1000));
 
 export class BitBrowser {
     constructor() {
@@ -10,24 +21,45 @@ export class BitBrowser {
         this.context = null;
         this.page = null;
         this.browserId = null;
+        this.isStarted = false;
     }
 
     /**
      * 创建并初始化BitBrowser实例
      * @static
      * @param {Object} params - 初始化参数
-     * @param {string} params.browserId - 指纹浏览器ID
+     * @param {string} params.browserId - BitBrowser浏览器ID
      * @returns {Promise<BitBrowser>} 初始化完成的实例
      */
     static async create({ browserId }) {
         const instance = new BitBrowser();
         instance.browserId = browserId;
-        
+
         try {
             await instance.initialize();
             return instance;
         } catch (error) {
-            console.error('BitBrowser初始化失败:', error);
+            console.error('BitBrowser初始化失败:', browserId, error);
+            throw error;
+        }
+    }
+
+    /**
+     * 打开BitBrowser浏览器并获取连接信息
+     * @private
+     * @returns {Promise<{ws: string, chromeDriverPath: string, http: string}>} 浏览器连接信息
+     */
+    async open() {
+        try {
+            const response = await axios.post(`${bitbrowserUrl}/browser/open`, { id: this.browserId });
+            if (response.data.success === true) {
+                const { ws, driver: chromeDriverPath, http } = response.data.data;
+                return { ws, chromeDriverPath, http };
+            } else {
+                throw new Error('BitBrowser API请求失败,请重试');
+            }
+        } catch (error) {
+            console.error('打开BitBrowser失败:', error);
             throw error;
         }
     }
@@ -37,31 +69,34 @@ export class BitBrowser {
      */
     async initialize() {
         try {
+            if (this.isStarted) {
+                console.log('BitBrowser已经初始化，跳过重复初始化');
+                return;
+            }
+
             console.log(`初始化BitBrowser: ${this.browserId}`);
 
-            // 启动浏览器
-            this.browser = await chromium.launch({
-                headless: false, // 显示浏览器窗口，便于调试
-                args: [
-                    '--no-sandbox',
-                    '--disable-setuid-sandbox',
-                    '--disable-dev-shm-usage',
-                    '--disable-accelerated-2d-canvas',
-                    '--no-first-run',
-                    '--no-zygote',
-                    '--disable-gpu'
-                ]
-            });
+            // 通过BitBrowser API打开浏览器
+            const { ws } = await this.open();
 
-            // 创建浏览器上下文
-            this.context = await this.browser.newContext({
-                viewport: { width: 1366, height: 768 },
-                userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-            });
+            // 连接到BitBrowser
+            this.browser = await playwright.chromium.connectOverCDP(ws);
 
-            // 创建页面
-            this.page = await this.context.newPage();
+            // 获取现有的上下文和页面
+            const allContexts = this.browser.contexts();
+            this.context = allContexts[0];
 
+            const allPages = this.context.pages();
+            this.page = allPages[0];
+
+            // 关闭其他页面，只保留主页面
+            for (const page of allPages) {
+                if (page !== this.page) {
+                    await page.close();
+                }
+            }
+
+            this.isStarted = true;
             console.log(`✅ BitBrowser初始化成功: ${this.browserId}`);
 
         } catch (error) {
@@ -248,20 +283,14 @@ export class BitBrowser {
      */
     async close() {
         try {
-            if (this.page) {
-                await this.page.close();
-                this.page = null;
-            }
+            // 使用BitBrowser API关闭浏览器
+            await axios.post(`${bitbrowserUrl}/browser/close`, { id: this.browserId });
 
-            if (this.context) {
-                await this.context.close();
-                this.context = null;
-            }
-
-            if (this.browser) {
-                await this.browser.close();
-                this.browser = null;
-            }
+            // 清理本地引用
+            this.page = null;
+            this.context = null;
+            this.browser = null;
+            this.isStarted = false;
 
             console.log(`✅ BitBrowser已关闭: ${this.browserId}`);
 

@@ -2,11 +2,11 @@ import { MonitorOrchestrator } from './orchestrator.js';
 import { unifiedConfigManager } from './core/config.js';
 import { unifiedDatabaseManager } from './core/database.js';
 import { createUnifiedNotifier } from './core/notifier.js';
-import { unifiedLoggerManager } from './core/logger.js';
 import http from 'http';
 
 /**
- * 多监控源系统主程序
+ * 简化的多监控源系统主程序
+ * 专注于核心功能，减少复杂性
  */
 class MultiSourceMonitorApp {
     constructor() {
@@ -15,9 +15,6 @@ class MultiSourceMonitorApp {
         this.httpServer = null;
         this.orchestrator = null;
         this.sharedServices = {};
-
-        // 使用UTC时间
-        process.env.TZ = 'UTC';
     }
 
     /**
@@ -35,37 +32,29 @@ class MultiSourceMonitorApp {
                 throw new Error('配置加载失败');
             }
             this.sharedServices.config = unifiedConfigManager;
-            console.log(`✅ 配置加载成功，启用模块: ${config.system.enabledModules.join(', ')}`);
 
-            // 2. 初始化数据库管理器（仅Twitter监控需要）
-            if (config.system.enabledModules.includes('twitter')) {
+            // 2. 初始化数据库管理器（Twitter监控和Binance去重都需要）
+            const needsDatabase = config.system.enabledModules.includes('twitter') ||
+                                 config.system.enabledModules.includes('binance-announcement') ||
+                                 config.system.enabledModules.includes('binance-price');
+
+            if (needsDatabase) {
                 console.log('🗄️  初始化数据库连接...');
-                const dbSuccess = await unifiedDatabaseManager.initialize(config.shared.database);
+                const dbSuccess = await unifiedDatabaseManager.initialize(config.shared.database, config.system.enabledModules);
                 if (!dbSuccess) {
                     throw new Error('数据库初始化失败');
                 }
                 this.sharedServices.database = unifiedDatabaseManager;
                 console.log('✅ 数据库连接成功');
             } else {
-                console.log('ℹ️  跳过数据库初始化（仅Binance监控运行，无需数据库）');
+                console.log('ℹ️  跳过数据库初始化（无启用的模块需要数据库）');
                 this.sharedServices.database = null;
             }
 
-            // 3. 初始化通知管理器
+            // 3. 通知系统
             console.log('📢 初始化通知系统...');
-            const notifier = createUnifiedNotifier(config.shared.notification);
-            // 只有在数据库初始化时才设置数据库管理器
-            if (this.sharedServices.database) {
-                notifier.setDatabaseManager(this.sharedServices.database);
-            }
-            this.sharedServices.notifier = notifier;
+            this.sharedServices.notifier = createUnifiedNotifier(config.shared.notification);
             console.log('✅ 通知系统初始化成功');
-
-            // 4. 初始化日志管理器
-            console.log('📝 初始化日志系统...');
-            unifiedLoggerManager.setLogLevel(config.shared.logging.level);
-            this.sharedServices.logger = unifiedLoggerManager;
-            console.log('✅ 日志系统初始化成功');
 
             return true;
 
@@ -76,7 +65,7 @@ class MultiSourceMonitorApp {
     }
 
     /**
-     * 系统启动流程
+     * 启动应用
      */
     async start() {
         try {
@@ -89,12 +78,10 @@ class MultiSourceMonitorApp {
                 throw new Error('共享服务初始化失败');
             }
 
-            // 2. 创建监控编排器
+            // 2. 创建并启动编排器
             console.log('🎭 创建监控编排器...');
             this.orchestrator = new MonitorOrchestrator(this.sharedServices);
 
-            // 3. 启动监控编排器
-            console.log('🎯 启动监控编排器...');
             const orchestratorStarted = await this.orchestrator.start();
             if (!orchestratorStarted) {
                 throw new Error('监控编排器启动失败');
@@ -103,19 +90,16 @@ class MultiSourceMonitorApp {
             this.isRunning = true;
             console.log('🎉 多监控源系统启动成功！');
 
-            // 延迟显示系统状态，让模块有时间完全启动
-            setTimeout(async () => {
-                await this.showSystemStatus();
-            }, 3000); // 3秒后显示状态
-
-            // 设置定期状态报告
-            this.setupStatusReporting();
-
-            // 启动HTTP健康检查服务器
+            // 3. 启动HTTP健康检查服务器
             this.startHealthCheckServer();
 
-            // 设置优雅关闭
+            // 4. 设置优雅关闭
             this.setupGracefulShutdown();
+
+            // 5. 显示系统状态
+            setTimeout(() => {
+                this.showSystemStatus();
+            }, 3000);
 
         } catch (error) {
             console.error('❌ 系统启动失败:', error.message);
@@ -127,7 +111,7 @@ class MultiSourceMonitorApp {
      * 启动HTTP健康检查服务器
      */
     startHealthCheckServer() {
-        const port = process.env.PORT || 3000;
+        const port = this.sharedServices.config.config.system.port;
 
         this.httpServer = http.createServer(async (req, res) => {
             // 设置CORS头
@@ -139,11 +123,16 @@ class MultiSourceMonitorApp {
             if (req.method === 'GET' && req.url === '/health') {
                 // 健康检查端点
                 try {
-                    const healthStatus = await this.getHealthStatus();
-                    const statusCode = healthStatus.status === 'healthy' ? 200 : 503;
+                    const status = this.orchestrator.getSystemStatus();
+                    const isHealthy = status.orchestrator.status === 'running' &&
+                                    status.orchestrator.activeModules > 0;
 
-                    res.writeHead(statusCode);
-                    res.end(JSON.stringify(healthStatus, null, 2));
+                    res.writeHead(isHealthy ? 200 : 503);
+                    res.end(JSON.stringify({
+                        status: isHealthy ? 'healthy' : 'unhealthy',
+                        timestamp: new Date().toISOString(),
+                        ...status
+                    }, null, 2));
                 } catch (error) {
                     res.writeHead(500);
                     res.end(JSON.stringify({ error: error.message }, null, 2));
@@ -152,20 +141,9 @@ class MultiSourceMonitorApp {
             } else if (req.method === 'GET' && req.url === '/status') {
                 // 详细状态端点
                 try {
-                    const systemStatus = this.orchestrator ? this.orchestrator.getSystemStatus() : null;
-
-                    const detailedStatus = {
-                        system: {
-                            isRunning: this.isRunning,
-                            uptime: this.startTime ? Date.now() - this.startTime.getTime() : 0,
-                            startTime: this.startTime?.toISOString()
-                        },
-                        orchestrator: systemStatus,
-                        timestamp: new Date().toISOString()
-                    };
-
+                    const status = this.orchestrator.getSystemStatus();
                     res.writeHead(200);
-                    res.end(JSON.stringify(detailedStatus, null, 2));
+                    res.end(JSON.stringify(status, null, 2));
 
                 } catch (error) {
                     res.writeHead(500);
@@ -207,74 +185,42 @@ class MultiSourceMonitorApp {
     /**
      * 显示系统状态
      */
-    async showSystemStatus() {
+    showSystemStatus() {
         try {
+            const status = this.orchestrator.getSystemStatus();
+
             console.log('\n📊 系统状态报告:');
             console.log('================');
+            console.log(`编排器状态: ${status.orchestrator.status === 'running' ? '✅ 运行中' : '❌ 已停止'}`);
+            console.log(`总模块数: ${status.orchestrator.enabledModules.length} 个`);
+            console.log(`运行中模块: ${status.orchestrator.activeModules} 个`);
 
-            if (this.orchestrator) {
-                const systemStatus = this.orchestrator.getSystemStatus();
-                
-                // 编排器状态
-                console.log(`编排器状态: ${systemStatus.orchestrator.isRunning ? '✅ 运行中' : '❌ 已停止'}`);
-                console.log(`总模块数: ${systemStatus.orchestrator.totalModules} 个`);
-                console.log(`运行中模块: ${systemStatus.orchestrator.runningModules} 个`);
-
-                // 各模块状态
-                if (systemStatus.modules) {
-                    Object.entries(systemStatus.modules).forEach(([moduleName, moduleStatus]) => {
-                        console.log(`\n📦 模块 ${moduleName}:`);
-                        console.log(`  状态: ${moduleStatus.status === 'running' ? '✅ 运行中' : '❌ 已停止'}`);
-                        console.log(`  健康: ${moduleStatus.isHealthy ? '✅ 健康' : '❌ 不健康'}`);
-                        console.log(`  运行时间: ${moduleStatus.uptimeFormatted || '未知'}`);
-                        
-                        if (moduleStatus.statistics) {
-                            console.log(`  处理总数: ${moduleStatus.statistics.totalProcessed}`);
-                            console.log(`  成功率: ${moduleStatus.statistics.successRate || '0%'}`);
-                        }
-                    });
+            // 显示各模块状态
+            for (const [moduleName, moduleStatus] of Object.entries(status.modules)) {
+                const statusIcon = moduleStatus.status === 'running' ? '✅' : '❌';
+                const healthIcon = moduleStatus.isHealthy !== false ? '✅' : '❌';
+                console.log(`\n📦 模块 ${moduleName}:`);
+                console.log(`  状态: ${statusIcon} ${moduleStatus.status}`);
+                console.log(`  健康: ${healthIcon} ${moduleStatus.isHealthy !== false ? '健康' : '异常'}`);
+                if (moduleStatus.statistics) {
+                    console.log(`  处理总数: ${moduleStatus.statistics.totalProcessed || 0}`);
+                    console.log(`  成功率: ${moduleStatus.statistics.successCount || 0}/${moduleStatus.statistics.totalProcessed || 0}`);
                 }
-
-                // 共享服务状态
-                const sharedStatus = systemStatus.sharedServices;
-                console.log(`\n🔧 共享服务:`);
-                console.log(`  配置管理: ${sharedStatus.config.isLoaded ? '✅' : '❌'}`);
-                console.log(`  数据库: ${sharedStatus.database.isHealthy ? '✅' : '❌'}`);
-                console.log(`  通知系统: ${sharedStatus.notifier.isAvailable ? '✅' : '❌'}`);
-                console.log(`  日志系统: ${sharedStatus.logger.isAvailable ? '✅' : '❌'}`);
-            } else {
-                console.log('编排器未初始化');
             }
 
+            // 显示共享服务状态
+            console.log(`\n🔧 共享服务:`);
+            console.log(`  配置管理: ${status.sharedServices.config}`);
+            console.log(`  数据库: ${status.sharedServices.database}`);
+            console.log(`  通知系统: ${status.sharedServices.notifier}`);
             console.log('================\n');
 
         } catch (error) {
-            console.error('显示系统状态时出错:', error.message);
+            console.error('❌ 获取系统状态失败:', error.message);
         }
     }
 
-    /**
-     * 设置定期状态报告
-     */
-    setupStatusReporting() {
-        // 每小时显示一次状态
-        setInterval(async () => {
-            if (this.isRunning) {
-                const utcTime = new Date();
-                console.log(`\n⏰ 定期状态报告 - ${utcTime.toISOString()}`);
-                await this.showSystemStatus();
-            }
-        }, 60 * 60 * 1000); // 1小时
 
-        // 每天清理一次旧数据
-        setInterval(() => {
-            if (this.isRunning) {
-                console.log('🧹 执行数据清理任务...');
-                // 清理日志文件
-                this.sharedServices.logger?.cleanupOldLogs(30);
-            }
-        }, 24 * 60 * 60 * 1000); // 24小时
-    }
 
     /**
      * 设置优雅关闭
@@ -286,7 +232,7 @@ class MultiSourceMonitorApp {
             try {
                 this.isRunning = false;
 
-                // 停止HTTP服务器
+                // 关闭HTTP服务器
                 if (this.httpServer) {
                     console.log('🌐 关闭HTTP服务器...');
                     this.httpServer.close();
@@ -294,7 +240,6 @@ class MultiSourceMonitorApp {
 
                 // 停止监控编排器
                 if (this.orchestrator) {
-                    console.log('⏹️  停止监控编排器...');
                     await this.orchestrator.stop();
                 }
 
@@ -335,21 +280,8 @@ class MultiSourceMonitorApp {
             shutdown('uncaughtException');
         });
 
-        process.on('unhandledRejection', (reason, promise) => {
+        process.on('unhandledRejection', (reason) => {
             console.error('❌ 未处理的Promise拒绝:', reason);
-
-            // 如果是数据库连接错误，不退出程序
-            if (reason && reason.message && (
-                reason.message.includes('Connection terminated') ||
-                reason.message.includes('connection closed') ||
-                reason.code === 'ECONNRESET'
-            )) {
-                console.log('🔄 数据库连接Promise拒绝，等待重连机制处理...');
-                return;
-            }
-
-            // 其他严重错误才退出程序
-            console.error('🛑 严重Promise拒绝，开始优雅关闭...');
             shutdown('unhandledRejection');
         });
     }
@@ -373,34 +305,6 @@ class MultiSourceMonitorApp {
             return `${minutes}分钟 ${seconds % 60}秒`;
         } else {
             return `${seconds}秒`;
-        }
-    }
-
-    /**
-     * 获取系统健康状态
-     * @returns {Object} 健康状态信息
-     */
-    async getHealthStatus() {
-        try {
-            const systemStatus = this.orchestrator ? this.orchestrator.getSystemStatus() : null;
-
-            return {
-                status: this.isRunning && systemStatus?.orchestrator.isRunning ? 'healthy' : 'unhealthy',
-                uptime: this.startTime ? Date.now() - this.startTime.getTime() : 0,
-                orchestrator: {
-                    isRunning: systemStatus?.orchestrator.isRunning || false,
-                    totalModules: systemStatus?.orchestrator.totalModules || 0,
-                    runningModules: systemStatus?.orchestrator.runningModules || 0
-                },
-                sharedServices: systemStatus?.sharedServices || {},
-                timestamp: new Date().toISOString()
-            };
-        } catch (error) {
-            return {
-                status: 'error',
-                error: error.message,
-                timestamp: new Date().toISOString()
-            };
         }
     }
 }
