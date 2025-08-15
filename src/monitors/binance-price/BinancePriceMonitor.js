@@ -379,8 +379,15 @@ export class BinancePriceMonitor extends BaseMonitor {
 
 📊 24小时数据:${additionalInfo}`;
 
-            await this.sendNotification(message, 'websocket_price_alert');
-            console.log(`📢 实时价格预警已发送: ${symbol} ${direction} ${Math.abs(changePercent).toFixed(2)}%`);
+            // 使用统一通知器发送消息
+            if (this.sharedServices && this.sharedServices.notifier) {
+                await this.sharedServices.notifier.sendToRecipients(message, {
+                    recipients: ['dingtalk']
+                });
+                console.log(`📢 实时价格预警已发送: ${symbol} ${direction} ${Math.abs(changePercent).toFixed(2)}%`);
+            } else {
+                console.warn('⚠️  通知器未配置，跳过通知发送');
+            }
 
         } catch (error) {
             console.error(`❌ 发送WebSocket价格预警失败 [${symbol}]:`, error.message);
@@ -542,8 +549,15 @@ ${icon} 价格预警 | 触发${threshold}%阈值 | ${new Date().toLocaleTimeStri
 
 📊 24小时数据:${additionalInfo}`;
 
-            await this.sendNotification(message, 'rest_api_price_alert');
-            console.log(`📢 定时价格预警已发送: ${symbol} ${direction} ${Math.abs(changePercent).toFixed(2)}%`);
+            // 使用统一通知器发送消息
+            if (this.sharedServices && this.sharedServices.notifier) {
+                await this.sharedServices.notifier.sendToRecipients(message, {
+                    recipients: ['dingtalk']
+                });
+                console.log(`📢 定时价格预警已发送: ${symbol} ${direction} ${Math.abs(changePercent).toFixed(2)}%`);
+            } else {
+                console.warn('⚠️  通知器未配置，跳过通知发送');
+            }
 
         } catch (error) {
             console.error(`❌ 发送REST API价格预警失败 [${symbol}]:`, error.message);
@@ -630,7 +644,14 @@ ${icon} 价格预警 | 触发${threshold}%阈值 | ${new Date().toLocaleTimeStri
                           `${direction}: ${Math.abs(changePercent).toFixed(2)}%\n` +
                           `价格: ${oldPrice} → ${newPrice}`;
 
-            await this.sendNotification(message, 'price_alert');
+            // 使用统一通知器发送消息
+            if (this.sharedServices && this.sharedServices.notifier) {
+                await this.sharedServices.notifier.sendToRecipients(message, {
+                    recipients: ['dingtalk']
+                });
+            } else {
+                console.warn('⚠️  通知器未配置，跳过通知发送');
+            }
 
             // 更新最后预警时间
             this.lastAlerts.set(symbol, now);
@@ -699,7 +720,14 @@ ${icon} 价格预警 | 触发${threshold}%阈值 | ${new Date().toLocaleTimeStri
 
             reportMessage += `💡 提示: 各交易对价格变化超过对应阈值时会自动发送预警`;
 
-            await this.sendNotification(reportMessage, 'daily_report');
+            // 使用统一通知器发送消息
+            if (this.sharedServices && this.sharedServices.notifier) {
+                await this.sharedServices.notifier.sendToRecipients(reportMessage, {
+                    recipients: ['dingtalk']
+                });
+            } else {
+                console.warn('⚠️  通知器未配置，跳过通知发送');
+            }
 
             console.log('✅ 每日价格报告发送成功');
 
