@@ -143,14 +143,47 @@ export class UnifiedConfigManager {
      * 加载Binance价格监控配置
      */
     loadBinancePriceConfig() {
+        let symbols = [];
+        let symbolThresholds = {};
+        const defaultThreshold = parseFloat(process.env.BINANCE_PRICE_THRESHOLD || '5.0');
+
+        if (process.env.BINANCE_PRICE_SYMBOLS) {
+            try {
+                // 支持两种格式:
+                // 1. 简化格式: BTCUSDT:3,ETHUSDT:4,BNBUSDT:6
+                // 2. 传统格式: BTCUSDT,ETHUSDT,BNBUSDT (使用默认阈值)
+                const symbolPairs = process.env.BINANCE_PRICE_SYMBOLS.split(',');
+
+                for (const pair of symbolPairs) {
+                    const trimmed = pair.trim();
+                    if (trimmed.includes(':')) {
+                        // 简化格式: 交易对:阈值
+                        const [symbol, threshold] = trimmed.split(':').map(s => s.trim());
+                        if (symbol && threshold) {
+                            symbols.push(symbol);
+                            symbolThresholds[symbol] = parseFloat(threshold);
+                        }
+                    } else {
+                        // 传统格式: 只有交易对名称
+                        symbols.push(trimmed);
+                    }
+                }
+            } catch (error) {
+                console.warn('⚠️  解析BINANCE_PRICE_SYMBOLS失败:', error.message);
+                symbols = ['BTCUSDT', 'ETHUSDT'];
+            }
+        } else {
+            symbols = ['BTCUSDT', 'ETHUSDT'];
+        }
+
         return {
             enabled: process.env.BINANCE_PRICE_ENABLED === 'true',
-            symbols: process.env.BINANCE_PRICE_SYMBOLS ?
-                     process.env.BINANCE_PRICE_SYMBOLS.split(',') :
-                     ['BTCUSDT', 'ETHUSDT'],
-            alertThreshold: parseFloat(process.env.BINANCE_PRICE_THRESHOLD || '5.0'),
-            checkInterval: parseInt(process.env.BINANCE_PRICE_INTERVAL || '60'),
-            cooldownPeriod: parseInt(process.env.BINANCE_PRICE_COOLDOWN || '3600')
+            symbols: symbols,
+            alertThreshold: defaultThreshold,
+            symbolThresholds: symbolThresholds,
+            checkInterval: parseInt(process.env.BINANCE_PRICE_INTERVAL || '300'),
+            cooldownPeriod: parseInt(process.env.BINANCE_PRICE_COOLDOWN || '3600'),
+            dailyReportTime: process.env.BINANCE_PRICE_DAILY_TIME || '09:00'
         };
     }
 

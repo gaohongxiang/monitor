@@ -727,32 +727,15 @@ export class BinanceWebSocketMonitor extends BaseMonitor {
             // 构建可点击的链接
             const binanceUrl = 'https://www.binance.com/en/support/announcement';
 
-            // 构建优美的双语通知消息（钉钉不支持Markdown，使用纯文本格式）
-            let notificationMessage = `. 🚨 Binance新公告`;
+            // 构建优化的通知消息格式
+            let notificationMessage = `� 公告：${titleChinese && titleChinese !== title && titleChinese.trim() !== '' ? titleChinese : title}
 
-            // 添加分类信息（如果存在）
-            if (catalogName && catalogChinese) {
-                notificationMessage += `
+� 原文:
+${title}
 
-🏷️ 分类: ${catalogName}(${catalogChinese})`;
-            }
-
-            // 添加标题信息
-            notificationMessage += `
-
-📢 标题: ${title}`;
-
-            // 只有翻译成功且与原文不同时才添加中文标题
-            if (titleChinese && titleChinese !== title && titleChinese.trim() !== '') {
-                notificationMessage += `
-📢 中文: ${titleChinese}`;
-            }
-
-            notificationMessage += `
-
-⏰ 发布时间: ${publishTime}
-🔗 查看详情: ${binanceUrl}
-📊 监控统计: 已处理 ${this.stats.announcementsProcessed} 条公告`;
+🏷️ 分类: ${catalogChinese || catalogName || '未分类'}
+📅 发布时间: ${publishTime}
+🔗 查看详情: ${binanceUrl}`;
 
             // 使用统一通知器发送消息
             if (this.sharedServices && this.sharedServices.notifier) {

@@ -8,7 +8,11 @@ export class BinancePriceSchema {
      * @returns {Array} 表定义数组
      */
     static getTables() {
+        // 简化版本：不使用数据库表，只用内存缓存
+        // 重启后价格缓存会重新初始化，这样更简单
         return [
+            // 如果需要持久化数据，可以取消注释以下表定义
+            /*
             {
                 name: 'price_alerts',
                 sql: `
@@ -34,6 +38,29 @@ export class BinancePriceSchema {
                 ]
             },
             {
+                name: 'daily_price_reports',
+                sql: `
+                    CREATE TABLE IF NOT EXISTS daily_price_reports (
+                        id SERIAL PRIMARY KEY,
+                        symbol VARCHAR(20) NOT NULL,
+                        current_price DECIMAL(20, 8) NOT NULL,
+                        change_24h DECIMAL(5, 2),
+                        high_24h DECIMAL(20, 8),
+                        low_24h DECIMAL(20, 8),
+                        volume_24h VARCHAR(20),
+                        report_date DATE DEFAULT CURRENT_DATE,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        module_name VARCHAR(50) DEFAULT 'binance_price'
+                    )
+                `,
+                indexes: [
+                    `CREATE INDEX IF NOT EXISTS idx_daily_reports_symbol
+                     ON daily_price_reports (symbol, report_date)`,
+                    `CREATE INDEX IF NOT EXISTS idx_daily_reports_date
+                     ON daily_price_reports (report_date)`
+                ]
+            },
+            {
                 name: 'price_history',
                 sql: `
                     CREATE TABLE IF NOT EXISTS price_history (
@@ -53,6 +80,7 @@ export class BinancePriceSchema {
                      ON price_history (recorded_at)`
                 ]
             }
+            */
         ];
     }
 

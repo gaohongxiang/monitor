@@ -75,6 +75,19 @@ npm run dev
 npm start
 ```
 
+### 2. 钉钉通知示例
+
+```
+📢 公告：币安将上线PEPU解锁币 (PEPU)
+
+📄 原文:
+Binance Will List Pepe Unchained (PEPU)
+
+🏷️ 分类: 新币上线
+📅 发布时间: 2025-01-14 16:30:45
+🔗 查看详情: https://www.binance.com/en/support/announcement
+```
+
 ## 相关链接
 
 - [Binance WebSocket API文档](https://developers.binance.com/docs/zh-CN/cms/general-info)

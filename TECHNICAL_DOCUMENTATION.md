@@ -1152,6 +1152,199 @@ npm run auth:check    # 检查认证状态
 npm start            # 直接使用数据库中的token
 ```
 
+## Binance价格监控技术实现
+
+### 概述
+
+Binance价格监控器支持两种数据获取方式的混合使用：
+- **WebSocket实时监控**: 毫秒级延迟，实时获取24小时涨跌幅数据
+- **REST API定期检查**: 用于每日报告和数据备份
+
+### 核心技术原理
+
+#### 1. 24小时涨跌幅计算
+
+币安APP上显示的涨跌幅使用以下公式：
+
+```javascript
+涨跌幅(%) = ((当前价格 - 24小时前价格) / 24小时前价格) × 100
+```
+
+**WebSocket数据格式**：
+```javascript
+{
+  "e": "24hrTicker",     // 事件类型
+  "s": "ETHUSDT",        // 交易对
+  "P": "-0.85",          // 24小时涨跌幅 ← 关键字段
+  "c": "4615.74",        // 当前价格
+  "o": "4655.24",        // 24小时前开盘价
+  "h": "4788.00",        // 24小时最高价
+  "l": "4364.69",        // 24小时最低价
+  "v": "120870000"       // 24小时成交量
+}
+```
+
+#### 2. WebSocket连接实现
+
+**连接URL构建**：
+```javascript
+// 单个交易对
+wss://stream.binance.com:9443/ws/btcusdt@ticker
+
+// 多个交易对
+wss://stream.binance.com:9443/ws/btcusdt@ticker/ethusdt@ticker/bnbusdt@ticker
+```
+
+**关键特性**：
+- 实时推送：价格变化时立即推送数据
+- 零API配额：不消耗REST API请求配额
+- 低延迟：毫秒级数据更新
+- 自动重连：网络断开时自动重连
+
+#### 3. 混合监控架构
+
+```
+┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
+│   WebSocket     │    │  BinancePriceMonitor │    │   REST API      │
+│   实时监控      │───▶│     混合监控器       │◀───│   定期检查      │
+└─────────────────┘    └──────────────────┘    └─────────────────┘
+        │                        │                        │
+        ▼                        ▼                        ▼
+┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
+│   实时价格预警   │    │   统一通知系统    │    │   每日价格报告   │
+└─────────────────┘    └──────────────────┘    └─────────────────┘
+```
+
+### 实现细节
+
+#### 1. 配置参数
+
+```javascript
+const config = {
+    // 基础配置
+    symbols: ['BTCUSDT', 'ETHUSDT'],
+    alertThreshold: 5.0,
+    symbolThresholds: {
+        'BTCUSDT': 3.0,
+        'ETHUSDT': 4.0
+    },
+
+    // 监控模式
+    useWebSocket: true,    // 启用WebSocket实时监控
+    useRestApi: true,      // 启用REST API定期检查
+
+    // 时间配置
+    cooldownPeriod: 3600,  // 预警冷却期（秒）
+    checkInterval: 300,    // REST API检查间隔（秒）
+    dailyReportTime: '09:00'
+};
+```
+
+#### 2. 数据流处理
+
+**WebSocket数据流**：
+```
+Binance服务器 → WebSocket推送 → 解析ticker数据 → 检查阈值 → 发送预警
+```
+
+**REST API数据流**：
+```
+定时器触发 → 请求API → 对比缓存价格 → 检查阈值 → 发送预警/报告
+```
+
+#### 3. 错误处理和重连机制
+
+**WebSocket重连策略**：
+- 指数退避算法：延迟时间逐次翻倍
+- 最大重连次数：10次
+- 心跳机制：每30秒发送PING保持连接
+
+**REST API错误处理**：
+- 网络错误重试
+- API限制处理
+- 代理支持
+
+### 性能优化
+
+#### 1. 内存管理
+
+- 使用Map存储价格数据，提高查询效率
+- 定期清理过期的预警记录
+- 限制缓存大小，防止内存泄漏
+
+#### 2. 网络优化
+
+- 支持SOCKS5代理
+- 连接复用和保持
+- 压缩数据传输
+
+#### 3. 通知优化
+
+- 冷却机制防止频繁预警
+- 批量处理通知消息
+- 异步发送，不阻塞主流程
+
+### 部署配置
+
+#### 环境变量
+
+```bash
+# 基础配置
+BINANCE_PRICE_ENABLED=true
+BINANCE_PRICE_SYMBOLS=BTCUSDT,ETHUSDT,BNBUSDT
+BINANCE_PRICE_THRESHOLD=5.0
+
+# 监控模式
+BINANCE_PRICE_USE_WEBSOCKET=true
+BINANCE_PRICE_USE_REST_API=true
+
+# 单独阈值
+BINANCE_PRICE_THRESHOLD_BTCUSDT=3.0
+BINANCE_PRICE_THRESHOLD_ETHUSDT=4.0
+
+# 网络配置
+BINANCE_PROXY_URL=socks5://127.0.0.1:1080
+
+# 通知配置
+DINGTALK_ACCESS_TOKEN=your_token
+```
+
+#### 监控指标
+
+- WebSocket连接状态
+- 数据接收频率
+- 预警触发次数
+- API请求成功率
+- 内存使用情况
+
+### 故障排除
+
+#### 常见问题
+
+1. **WebSocket连接失败**
+   - 检查网络连接
+   - 验证代理配置
+   - 查看防火墙设置
+
+2. **数据不更新**
+   - 确认交易对名称正确
+   - 检查币安服务状态
+   - 验证WebSocket流订阅
+
+3. **预警不触发**
+   - 检查阈值设置
+   - 确认冷却期配置
+   - 验证通知系统
+
+4. **内存使用过高**
+   - 检查缓存清理机制
+   - 限制监控交易对数量
+   - 优化数据结构
+
+---
+
+*本文档持续更新中，如有问题请提交Issue或Pull Request。*
+
 ### 代理支持选择
 
 #### SOCKS vs HTTP代理
