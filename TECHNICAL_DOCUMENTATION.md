@@ -50,7 +50,7 @@ graph TB
     H --> L[TwitterScheduler - 定时调度]
     H --> M[TwitterApiClient - API客户端]
 
-    I --> N[BinanceWebSocketMonitor]
+    I --> N[BinanceAnnouncementMonitor]
     I --> O[WebSocket连接管理]
     I --> P[实时公告处理]
 
@@ -92,7 +92,7 @@ graph TB
 - **特点**: 定时轮询模式，避免API限流
 
 #### 4. Binance公告监控模块
-- **BinanceWebSocketMonitor**: Binance WebSocket监控器
+- **BinanceAnnouncementMonitor**: Binance公告监控器
 - **功能**:
   - 实时WebSocket连接管理
   - HMAC SHA256签名认证
@@ -274,7 +274,7 @@ sequenceDiagram
     participant Config as UnifiedConfigManager
     participant DB as UnifiedDatabaseManager
     participant Twitter as TwitterMonitor
-    participant Binance as BinanceWebSocketMonitor
+    participant Binance as BinanceAnnouncementMonitor
 
     Main->>Config: 加载配置
     Config->>Config: 检查模块开关
@@ -1470,7 +1470,7 @@ multi-source-monitor/
 │   │   │   ├── schema.js                 # Twitter表结构
 │   │   │   └── README.md                 # Twitter模块文档
 │   │   ├── binance-announcement/
-│   │   │   ├── BinanceWebSocketMonitor.js # Binance公告监控器
+│   │   │   ├── BinanceAnnouncementMonitor.js # Binance公告监控器
 │   │   │   ├── schema.js                 # Binance公告表结构
 │   │   │   └── README.md                 # Binance公告模块文档
 │   │   └── binance-price/

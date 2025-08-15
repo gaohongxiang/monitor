@@ -20,8 +20,8 @@ const MONITOR_REGISTRY = {
         type: 'crypto_announcement',
         description: 'Binance公告监控',
         factory: async (sharedServices, config) => {
-            const { BinanceWebSocketMonitor } = await import('./binance-announcement/BinanceWebSocketMonitor.js');
-            return new BinanceWebSocketMonitor(sharedServices, config);
+            const { BinanceAnnouncementMonitor } = await import('./binance-announcement/BinanceAnnouncementMonitor.js');
+            return new BinanceAnnouncementMonitor(sharedServices, config);
         }
     },
 

@@ -1,5 +1,5 @@
 /**
- * Binance WebSocket 监控器
+ * Binance公告监控器
  * 基于官方WebSocket API文档实现
  * 支持实时公告推送
  */
@@ -9,7 +9,7 @@ import crypto from 'crypto';
 import { SocksProxyAgent } from 'socks-proxy-agent';
 import * as deepl from 'deepl-node';
 
-export class BinanceWebSocketMonitor extends BaseMonitor {
+export class BinanceAnnouncementMonitor extends BaseMonitor {
     constructor(sharedServices, config = {}) {
         super('binance-websocket', sharedServices, config);
 
@@ -68,7 +68,7 @@ export class BinanceWebSocketMonitor extends BaseMonitor {
             connectionDurations: [] // 记录连接持续时间，用于分析稳定性
         };
 
-        console.log('🔌 Binance WebSocket监控器已初始化');
+        console.log('🔌 币安公告监控器已初始化');
         console.log(`📋 配置: 主题=${this.topics.join('|')}, 接收窗口=${this.recvWindow}ms`);
     }
 
