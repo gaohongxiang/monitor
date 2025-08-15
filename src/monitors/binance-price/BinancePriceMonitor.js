@@ -67,6 +67,10 @@ export class BinancePriceMonitor extends BaseMonitor {
         this.dailyReportTime = process.env.BINANCE_PRICE_DAILY_TIME || '09:00';
         this.proxyUrl = process.env.BINANCE_PROXY_URL;
 
+        // 监控模式配置
+        this.useWebSocket = process.env.BINANCE_PRICE_USE_WEBSOCKET === 'true'; // 默认使用定时检查
+        this.checkInterval = parseInt(process.env.BINANCE_PRICE_INTERVAL) || 300; // 默认5分钟
+
         // 默认阈值（如果某个交易对没有单独设置）
         this.defaultThreshold = 5.0;
     }
@@ -77,6 +81,10 @@ export class BinancePriceMonitor extends BaseMonitor {
     logConfiguration() {
         console.log('📊 Binance价格监控器配置:');
         console.log(`   监控交易对: ${this.symbols.join(', ')}`);
+        console.log(`   监控模式: ${this.useWebSocket ? 'WebSocket实时监控' : 'REST API定时检查'}`);
+        if (!this.useWebSocket) {
+            console.log(`   检查间隔: ${this.checkInterval}秒 (${Math.floor(this.checkInterval/60)}分钟)`);
+        }
         console.log(`   冷却期: ${this.cooldownPeriod}秒`);
         console.log(`   每日报告时间: ${this.dailyReportTime}`);
 
@@ -120,13 +128,19 @@ export class BinancePriceMonitor extends BaseMonitor {
             console.log(`🚀 启动Binance价格监控器...`);
             this.isRunning = true;
 
-            // 启动WebSocket实时监控
-            console.log('📈 启动WebSocket实时价格监控...');
-            await this.connectWebSocket();
+            if (this.useWebSocket) {
+                // 启动WebSocket实时监控
+                console.log('📈 启动WebSocket实时价格监控...');
+                await this.connectWebSocket();
+            } else {
+                // 启动REST API定时检查
+                console.log('📊 启动REST API定时价格检查...');
+                await this.startRestApiPriceCheck();
+            }
 
-            // 启动REST API定期检查和每日报告
-            console.log('📊 启动REST API定期检查和每日报告...');
-            await this.startRestApiMonitoring();
+            // 启动每日报告
+            console.log('📅 启动每日报告...');
+            await this.startDailyReport();
 
             console.log(`✅ Binance价格监控启动成功`);
             return true;
@@ -410,13 +424,31 @@ export class BinancePriceMonitor extends BaseMonitor {
     // ==================== REST API定期监控 ====================
 
     /**
-     * 启动REST API监控
+     * 启动REST API价格检查
      */
-    async startRestApiMonitoring() {
+    async startRestApiPriceCheck() {
         try {
-            // 初始化价格缓存
-            await this.initializePriceCache();
+            // 立即执行一次检查
+            console.log('🔍 执行初始价格检查...');
+            await this.performPriceCheck();
 
+            // 启动定时检查
+            this.priceCheckInterval = setInterval(async () => {
+                await this.performPriceCheck();
+            }, this.checkInterval * 1000);
+
+            console.log(`⏰ 定时价格检查已启动，间隔: ${this.checkInterval}秒`);
+
+        } catch (error) {
+            console.error('❌ 启动REST API价格检查失败:', error.message);
+        }
+    }
+
+    /**
+     * 启动每日报告
+     */
+    async startDailyReport() {
+        try {
             // 启动每日报告检查（每分钟检查一次是否到了报告时间）
             this.dailyReportInterval = setInterval(async () => {
                 await this.checkDailyReport();
@@ -425,7 +457,96 @@ export class BinancePriceMonitor extends BaseMonitor {
             console.log(`📅 每日报告时间: ${this.dailyReportTime}`);
 
         } catch (error) {
-            console.error('❌ 启动REST API监控失败:', error.message);
+            console.error('❌ 启动每日报告失败:', error.message);
+        }
+    }
+
+    /**
+     * 执行价格检查
+     */
+    async performPriceCheck() {
+        try {
+            console.log('📊 检查价格变化...');
+
+            // 获取24小时统计数据
+            const stats = await this.fetch24hStats();
+
+            for (const [symbol, data] of Object.entries(stats)) {
+                const priceChangePercent = parseFloat(data.priceChangePercent);
+                const currentPrice = parseFloat(data.lastPrice);
+
+                // 检查是否需要发送预警
+                await this.checkRestApiPriceAlert(symbol, priceChangePercent, currentPrice, data);
+            }
+
+            console.log(`✅ 价格检查完成，监控 ${Object.keys(stats).length} 个交易对`);
+
+        } catch (error) {
+            console.error('❌ 执行价格检查失败:', error.message);
+        }
+    }
+
+    /**
+     * 检查REST API价格预警
+     */
+    async checkRestApiPriceAlert(symbol, changePercent, currentPrice, fullData) {
+        try {
+            const threshold = this.getThresholdForSymbol(symbol);
+
+            // 检查是否超过阈值
+            if (Math.abs(changePercent) >= threshold) {
+                // 检查冷却期
+                const lastAlert = this.lastAlerts.get(symbol);
+                const now = Date.now();
+
+                if (!lastAlert || (now - lastAlert) >= this.cooldownPeriod * 1000) {
+                    await this.sendRestApiPriceAlert(symbol, changePercent, currentPrice, threshold, fullData);
+                    this.lastAlerts.set(symbol, now);
+
+                    console.log(`🚨 价格预警触发: ${symbol} ${changePercent > 0 ? '上涨' : '下跌'} ${Math.abs(changePercent).toFixed(2)}%`);
+                }
+            }
+        } catch (error) {
+            console.error(`❌ 检查REST API价格预警失败 [${symbol}]:`, error.message);
+        }
+    }
+
+    /**
+     * 发送REST API价格预警
+     */
+    async sendRestApiPriceAlert(symbol, changePercent, currentPrice, threshold, fullData) {
+        try {
+            const direction = changePercent > 0 ? '上涨' : '下跌';
+            const icon = changePercent > 0 ? '📈' : '📉';
+            const changeStr = changePercent > 0 ? `+${changePercent.toFixed(2)}` : changePercent.toFixed(2);
+
+            // 简化币种名称显示
+            const simplifiedSymbol = symbol.replace('USDT', '').replace('BTC', 'BTC').replace('ETH', 'ETH').replace('BNB', 'BNB');
+
+            // 格式化价格显示
+            const formattedPrice = this.formatPrice(currentPrice);
+
+            // 构建24小时数据信息
+            const highPrice = parseFloat(fullData.highPrice);
+            const lowPrice = parseFloat(fullData.lowPrice);
+            const volume = parseFloat(fullData.volume);
+
+            const additionalInfo = `
+📊 24h最高: $${this.formatPrice(highPrice)}
+📊 24h最低: $${this.formatPrice(lowPrice)}
+💹 24h成交量: ${this.formatVolume(volume)}`;
+
+            const message = `💰 ${simplifiedSymbol}: $${formattedPrice} (${changeStr}%)
+
+${icon} 价格预警 | 触发${threshold}%阈值 | ${new Date().toLocaleTimeString('zh-CN', {hour12: false})}
+
+📊 24小时数据:${additionalInfo}`;
+
+            await this.sendNotification(message, 'rest_api_price_alert');
+            console.log(`📢 定时价格预警已发送: ${symbol} ${direction} ${Math.abs(changePercent).toFixed(2)}%`);
+
+        } catch (error) {
+            console.error(`❌ 发送REST API价格预警失败 [${symbol}]:`, error.message);
         }
     }
 
