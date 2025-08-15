@@ -31,6 +31,7 @@ export class TwitterSchema {
                     CREATE TABLE IF NOT EXISTS twitter_processed_records (
                         id SERIAL PRIMARY KEY,
                         monitor_user VARCHAR(255) NOT NULL,
+                        user_id VARCHAR(50),
                         last_tweet_id VARCHAR(50),
                         last_check_time TIMESTAMP,
                         is_active BOOLEAN DEFAULT TRUE,

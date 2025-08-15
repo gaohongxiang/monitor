@@ -319,9 +319,14 @@ export class TwitterMonitor extends BaseMonitor {
                 }
             }
 
-            // 更新监控状态
+            // 更新监控状态（包含用户ID缓存）
             if (tweets.length > 0) {
+                // 从客户端获取缓存的用户ID
+                const cachedUserInfo = client.cachedUserInfo;
+                const userId = cachedUserInfo ? cachedUserInfo.userId : null;
+
                 await database.updateMonitorState(monitorUser, 'twitter', {
+                    user_id: userId,
                     last_check_time: latestTweetTime || new Date().toISOString(),
                     last_update_time: new Date()
                 });

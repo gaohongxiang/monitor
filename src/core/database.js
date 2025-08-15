@@ -281,21 +281,71 @@ export class UnifiedDatabaseManager {
 
         try {
             const query = `
-                INSERT INTO twitter_processed_records (monitor_user, last_check_time, created_at, updated_at)
-                VALUES ($1, $2, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                INSERT INTO twitter_processed_records (monitor_user, user_id, last_check_time, created_at, updated_at)
+                VALUES ($1, $2, $3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                 ON CONFLICT (monitor_user)
                 DO UPDATE SET
-                    last_check_time = $2,
+                    user_id = COALESCE($2, twitter_processed_records.user_id),
+                    last_check_time = $3,
                     updated_at = CURRENT_TIMESTAMP
             `;
 
             await this.pool.query(query, [
                 monitorUser,
+                stateData.user_id || null,
                 stateData.last_check_time
             ]);
             return true;
         } catch (error) {
             console.error('❌ 更新监控状态失败:', error.message);
+            return false;
+        }
+    }
+
+    /**
+     * 获取缓存的用户ID
+     * @param {string} monitorUser - 监控用户名
+     * @returns {Promise<string|null>} 用户ID
+     */
+    async getCachedUserId(monitorUser) {
+        if (!await this.ensureConnection()) return null;
+
+        try {
+            const result = await this.pool.query(
+                'SELECT user_id FROM twitter_processed_records WHERE monitor_user = $1 AND user_id IS NOT NULL',
+                [monitorUser]
+            );
+            return result.rows.length > 0 ? result.rows[0].user_id : null;
+        } catch (error) {
+            console.error('❌ 获取缓存用户ID失败:', error.message);
+            return null;
+        }
+    }
+
+    /**
+     * 缓存用户ID
+     * @param {string} monitorUser - 监控用户名
+     * @param {string} userId - Twitter用户ID
+     * @returns {Promise<boolean>} 是否缓存成功
+     */
+    async cacheUserId(monitorUser, userId) {
+        if (!await this.ensureConnection()) return false;
+
+        try {
+            const query = `
+                INSERT INTO twitter_processed_records (monitor_user, user_id, created_at, updated_at)
+                VALUES ($1, $2, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                ON CONFLICT (monitor_user)
+                DO UPDATE SET
+                    user_id = $2,
+                    updated_at = CURRENT_TIMESTAMP
+            `;
+
+            await this.pool.query(query, [monitorUser, userId]);
+            console.log(`✅ 用户ID已缓存: ${monitorUser} -> ${userId}`);
+            return true;
+        } catch (error) {
+            console.error('❌ 缓存用户ID失败:', error.message);
             return false;
         }
     }

@@ -222,7 +222,12 @@ export class TwitterApiClient {
      */
     async findUserByUsername(username) {
         try {
+
             const user = await this.client.v2.userByUsername(username);
+
+            // 更新请求计数 - 这个API调用也消耗配额！
+            this.updateRequestCount();
+
             return { userId: user.data.id, nickname: user.data.name };
         } catch (error) {
             console.error(`获取用户信息失败 [原因 ${error.message}]`);
@@ -248,14 +253,44 @@ export class TwitterApiClient {
                 throw new Error('Twitter客户端未初始化');
             }
 
-            // 缓存用户ID，避免重复API请求
-            if (!this.cachedUserInfo || this.cachedUserInfo.username !== username) {
-                const { userId, nickname } = await this.findUserByUsername(username);
-                this.cachedUserInfo = { username, userId, nickname };
-                console.log(`缓存用户信息 [用户: ${username}] [ID: ${userId}]`);
-            }
+            // 优先从数据库获取缓存的用户ID，避免重复API请求
+            let userId, nickname;
 
-            const { userId, nickname } = this.cachedUserInfo;
+            // 先检查内存缓存
+            if (this.cachedUserInfo && this.cachedUserInfo.username === username) {
+                userId = this.cachedUserInfo.userId;
+                nickname = this.cachedUserInfo.nickname;
+                console.log(`使用内存缓存 [用户: ${username}] [ID: ${userId}]`);
+            } else {
+                // 从数据库获取缓存的用户ID
+                const cachedUserId = await this.database.getCachedUserId(username);
+
+                if (cachedUserId) {
+                    // 使用数据库缓存的ID，但仍需要获取昵称
+                    userId = cachedUserId;
+                    // 简化：直接使用用户名作为昵称，避免额外API调用
+                    nickname = username;
+                    console.log(`使用数据库缓存 [用户: ${username}] [ID: ${userId}]`);
+
+                    // 更新内存缓存
+                    this.cachedUserInfo = { username, userId, nickname };
+                } else {
+                    // 数据库中没有缓存，需要调用API查询
+                    console.log(`首次查询用户信息 [用户: ${username}]`);
+                    const userInfo = await this.findUserByUsername(username);
+                    if (!userInfo) {
+                        throw new Error(`无法获取用户信息: ${username}`);
+                    }
+
+                    userId = userInfo.userId;
+                    nickname = userInfo.nickname;
+
+                    // 缓存到数据库和内存
+                    await this.database.cacheUserId(username, userId);
+                    this.cachedUserInfo = { username, userId, nickname };
+                    console.log(`用户信息已缓存 [用户: ${username}] [ID: ${userId}]`);
+                }
+            }
 
             // 构建查询参数 - 获取足够的推文来覆盖监控间隔
             const params = {
