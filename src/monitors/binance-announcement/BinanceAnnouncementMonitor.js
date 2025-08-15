@@ -728,9 +728,9 @@ export class BinanceAnnouncementMonitor extends BaseMonitor {
             const binanceUrl = 'https://www.binance.com/en/support/announcement';
 
             // 构建优化的通知消息格式
-            let notificationMessage = `� 公告：${titleChinese && titleChinese !== title && titleChinese.trim() !== '' ? titleChinese : title}
+            let notificationMessage = `📢 公告：${titleChinese && titleChinese !== title && titleChinese.trim() !== '' ? titleChinese : title}
 
-� 原文:
+📝 原文:
 ${title}
 
 🏷️ 分类: ${catalogChinese || catalogName || '未分类'}
