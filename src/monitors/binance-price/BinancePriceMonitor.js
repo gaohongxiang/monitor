@@ -355,7 +355,7 @@ export class BinancePriceMonitor extends BaseMonitor {
     async sendWebSocketPriceAlert(symbol, changePercent, currentPrice, threshold) {
         try {
             const direction = changePercent > 0 ? '上涨' : '下跌';
-            const icon = changePercent > 0 ? '📈' : '📉';
+            const icon = changePercent > 0 ? "🟢" : "🔴";
             const changeStr = changePercent > 0 ? `+${changePercent.toFixed(2)}` : changePercent.toFixed(2);
 
             // 简化币种名称显示（BTCUSDT -> BTC）
@@ -373,9 +373,11 @@ export class BinancePriceMonitor extends BaseMonitor {
                                `\n💹 24h成交量: ${this.formatVolume(priceInfo.volume)}`;
             }
 
-            const message = `💰 ${simplifiedSymbol}: $${formattedPrice} (${changeStr}%)
+            const message = `${icon} 价格预警 ${simplifiedSymbol}: $${formattedPrice} (${changeStr}%)
 
-⚡ 价格预警 | 触发${threshold}%阈值 | ${new Date().toLocaleString('zh-CN').split(' ')[1]}
+📅 ${new Date().toLocaleDateString('zh-CN')} ${new Date().toLocaleTimeString('zh-CN', {hour12: false})}
+
+⚠️ 触发${threshold}%阈值
 
 📊 24小时数据:${additionalInfo}`;
 
@@ -524,7 +526,7 @@ export class BinancePriceMonitor extends BaseMonitor {
     async sendRestApiPriceAlert(symbol, changePercent, currentPrice, threshold, fullData) {
         try {
             const direction = changePercent > 0 ? '上涨' : '下跌';
-            const icon = changePercent > 0 ? '📈' : '📉';
+            const icon = changePercent > 0 ? "🟢" : "🔴";
             const changeStr = changePercent > 0 ? `+${changePercent.toFixed(2)}` : changePercent.toFixed(2);
 
             // 简化币种名称显示
@@ -543,9 +545,11 @@ export class BinancePriceMonitor extends BaseMonitor {
 📊 24h最低: $${this.formatPrice(lowPrice)}
 💹 24h成交量: ${this.formatVolume(volume)}`;
 
-            const message = `💰 ${simplifiedSymbol}: $${formattedPrice} (${changeStr}%)
+            const message = `${icon} 价格预警 ${simplifiedSymbol}: $${formattedPrice} (${changeStr}%)
 
-${icon} 价格预警 | 触发${threshold}%阈值 | ${new Date().toLocaleTimeString('zh-CN', {hour12: false})}
+📅 ${new Date().toLocaleDateString('zh-CN')} ${new Date().toLocaleTimeString('zh-CN', {hour12: false})}
+
+⚠️ 触发${threshold}%阈值
 
 📊 24小时数据:${additionalInfo}`;
 
@@ -670,14 +674,17 @@ ${icon} 价格预警 | 触发${threshold}%阈值 | ${new Date().toLocaleTimeStri
      */
     async checkDailyReport() {
         try {
+            // 使用北京时间 (UTC+8)
             const now = new Date();
-            const currentTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
-            const today = now.toDateString();
+            const beijingTime = new Date(now.getTime() + (8 * 60 * 60 * 1000)); // 转换为UTC+8
+            const currentTime = `${beijingTime.getUTCHours().toString().padStart(2, '0')}:${beijingTime.getUTCMinutes().toString().padStart(2, '0')}`;
+            const today = beijingTime.toDateString();
 
-            // 检查是否到了每日报告时间
+            // 检查是否到了每日报告时间 (北京时间)
             if (currentTime === this.dailyReportTime) {
                 // 检查今天是否已经发送过报告
                 if (this.lastDailyReport !== today) {
+                    console.log(`📅 北京时间 ${currentTime} 发送每日报告`);
                     await this.sendDailyPriceReport();
                     this.lastDailyReport = today;
                 }
@@ -696,23 +703,41 @@ ${icon} 价格预警 | 触发${threshold}%阈值 | ${new Date().toLocaleTimeStri
 
             const stats24h = await this.fetch24hStats();
 
-            let reportMessage = '📊 每日价格报告\n';
+            // 构建第一行价格摘要
+            const priceSummary = this.symbols.map(symbol => {
+                const stats = stats24h[symbol];
+                if (stats) {
+                    const simplifiedSymbol = symbol.replace('USDT', '');
+                    const price = parseFloat(stats.lastPrice);
+                    const formattedPrice = this.formatPrice(price);
+                    return `${simplifiedSymbol} $${formattedPrice}`;
+                }
+                return null;
+            }).filter(Boolean).join(' | ');
+
+            let reportMessage = `📊 每日价格报告：${priceSummary}\n\n`;
             reportMessage += `📅 ${new Date().toLocaleDateString('zh-CN')}\n\n`;
 
             for (const symbol of this.symbols) {
                 const stats = stats24h[symbol];
                 if (stats) {
                     const change24h = parseFloat(stats.priceChangePercent);
-                    const changeIcon = change24h >= 0 ? '📈' : '📉';
+                    const changeIcon = change24h >= 0 ? '🟢' : '🔴';
                     const changeStr = change24h >= 0 ? `+${change24h.toFixed(2)}` : change24h.toFixed(2);
 
                     const symbolThreshold = this.getThresholdForSymbol(symbol);
+                    const simplifiedSymbol = symbol.replace('USDT', '');
 
-                    reportMessage += `${changeIcon} ${symbol}\n`;
-                    reportMessage += `💰 当前价格: $${parseFloat(stats.lastPrice).toFixed(8)}\n`;
+                    // 格式化所有价格为两位小数
+                    const currentPrice = this.formatPrice(parseFloat(stats.lastPrice));
+                    const highPrice = this.formatPrice(parseFloat(stats.highPrice));
+                    const lowPrice = this.formatPrice(parseFloat(stats.lowPrice));
+
+                    reportMessage += `${changeIcon} ${simplifiedSymbol}\n`;
+                    reportMessage += `💰 当前价格: $${currentPrice}\n`;
                     reportMessage += `📊 24h变化: ${changeStr}%\n`;
-                    reportMessage += `📈 24h最高: $${parseFloat(stats.highPrice).toFixed(8)}\n`;
-                    reportMessage += `📉 24h最低: $${parseFloat(stats.lowPrice).toFixed(8)}\n`;
+                    reportMessage += `📈 24h最高: $${highPrice}\n`;
+                    reportMessage += `📉 24h最低: $${lowPrice}\n`;
                     reportMessage += `💹 24h成交量: ${this.formatVolume(parseFloat(stats.volume))}\n`;
                     reportMessage += `⚠️  预警阈值: ${symbolThreshold}%\n\n`;
                 }
