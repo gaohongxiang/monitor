@@ -22,6 +22,7 @@ export class BinancePriceMonitor extends BaseMonitor {
         this.maxReconnectAttempts = 10;
         this.reconnectDelay = 5000;
         this.pingInterval = null;
+        this.lastPingTime = null;
         this.priceData = new Map(); // WebSocket实时价格数据
 
         // REST API相关
@@ -272,6 +273,9 @@ export class BinancePriceMonitor extends BaseMonitor {
      */
     async handleWebSocketMessage(message) {
         try {
+            // 更新活动时间
+            this.statistics.lastActivity = new Date();
+
             // 处理单个ticker消息
             if (message.e === '24hrTicker') {
                 await this.processWebSocketTicker(message);
@@ -404,6 +408,7 @@ export class BinancePriceMonitor extends BaseMonitor {
         this.pingInterval = setInterval(() => {
             if (this.ws && this.ws.readyState === WebSocket.OPEN) {
                 this.ws.ping();
+                this.lastPingTime = new Date();
                 console.log('🏓 发送WebSocket PING心跳');
             }
         }, 30000);
@@ -476,6 +481,9 @@ export class BinancePriceMonitor extends BaseMonitor {
     async performPriceCheck() {
         try {
             console.log('📊 检查价格变化...');
+
+            // 更新活动时间
+            this.statistics.lastActivity = new Date();
 
             // 获取24小时统计数据
             const stats = await this.fetch24hStats();
@@ -894,5 +902,66 @@ export class BinancePriceMonitor extends BaseMonitor {
             // 预警状态
             lastAlerts: Object.fromEntries(this.lastAlerts)
         };
+    }
+
+    /**
+     * 健康检查方法
+     * @returns {Promise<boolean>} 是否健康
+     */
+    async onHealthCheck() {
+        try {
+            // 基础状态检查
+            if (!this.isRunning) {
+                return false;
+            }
+
+            // WebSocket模式的健康检查
+            if (this.useWebSocket) {
+                // 检查WebSocket连接状态
+                if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+                    console.warn('⚠️  WebSocket连接异常');
+                    return false;
+                }
+
+                // 检查最近是否有心跳活动
+                const now = Date.now();
+                if (this.lastPingTime && (now - this.lastPingTime.getTime()) > 2 * 60 * 1000) {
+                    console.warn('⚠️  WebSocket心跳超时');
+                    return false;
+                }
+            }
+
+            // REST API模式的健康检查
+            else {
+                // 检查定时器是否正常运行
+                if (!this.priceCheckInterval) {
+                    console.warn('⚠️  价格检查定时器未运行');
+                    return false;
+                }
+
+                // 对于REST API模式，允许更长的活动间隔（检查间隔 + 2分钟缓冲）
+                const maxInactiveTime = (this.checkInterval + 120) * 1000; // 检查间隔 + 2分钟
+                const lastActivity = this.statistics.lastActivity;
+                if (lastActivity) {
+                    const timeSinceLastActivity = Date.now() - lastActivity.getTime();
+                    if (timeSinceLastActivity > maxInactiveTime) {
+                        console.warn(`⚠️  REST API检查超时: ${Math.floor(timeSinceLastActivity/1000)}秒无活动`);
+                        return false;
+                    }
+                }
+            }
+
+            // 检查每日报告定时器
+            if (!this.dailyReportInterval) {
+                console.warn('⚠️  每日报告定时器未运行');
+                return false;
+            }
+
+            return true;
+
+        } catch (error) {
+            console.error('❌ 健康检查执行失败:', error.message);
+            return false;
+        }
     }
 }
