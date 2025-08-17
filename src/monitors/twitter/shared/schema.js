@@ -1,8 +1,9 @@
 /**
- * Twitter监控模块数据库表结构
+ * Twitter监控模块共享数据库表结构
+ * 供官方API和OpenAPI两个模块共同使用
  */
 
-export class TwitterSchema {
+export class TwitterSharedSchema {
     /**
      * 获取Twitter模块的表定义
      * @returns {Array} 表定义数组
@@ -10,19 +11,28 @@ export class TwitterSchema {
     static getTables() {
         return [
             {
-                name: 'twitter_refresh_tokens',
+                name: 'twitter_credentials',
                 sql: `
-                    CREATE TABLE IF NOT EXISTS twitter_refresh_tokens (
+                    CREATE TABLE IF NOT EXISTS twitter_credentials (
                         id SERIAL PRIMARY KEY,
                         username VARCHAR(255) UNIQUE NOT NULL,
-                        refresh_token TEXT NOT NULL,
+                        
+                        -- 官方API凭证
+                        refresh_token TEXT,
+                        
+                        -- OpenAPI凭证
+                        openapi_auth_token TEXT,
+                        openapi_ct0_token TEXT,
+                        openapi_ct0_updated_at TIMESTAMP,
+                        
+                        -- 元数据
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )
                 `,
                 indexes: [
-                    `CREATE INDEX IF NOT EXISTS idx_twitter_refresh_tokens_username
-                     ON twitter_refresh_tokens (username)`
+                    `CREATE INDEX IF NOT EXISTS idx_twitter_credentials_username
+                     ON twitter_credentials (username)`
                 ]
             },
             {
@@ -36,7 +46,8 @@ export class TwitterSchema {
                         last_check_time TIMESTAMP,
                         is_active BOOLEAN DEFAULT TRUE,
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE(monitor_user)
                     )
                 `,
                 indexes: [
@@ -70,7 +81,7 @@ export class TwitterSchema {
             }
         }
         
-        console.log('✅ Twitter模块表结构初始化完成');
+        console.log('✅ Twitter共享模块表结构初始化完成');
     }
 
     /**
@@ -114,5 +125,47 @@ export class TwitterSchema {
 
         console.log(`✅ 已清理 ${recordsResult.rowCount} 条旧处理记录`);
         return recordsResult.rowCount;
+    }
+
+    /**
+     * 数据迁移：从旧结构迁移到新结构
+     * @param {Object} client - 数据库客户端
+     */
+    static async migrateFromOldSchema(client) {
+        console.log('🔄 检查是否需要数据迁移...');
+        
+        try {
+            // 检查是否存在旧的twitter_refresh_tokens表
+            const oldTableExists = await client.query(`
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables 
+                    WHERE table_name = 'twitter_refresh_tokens'
+                )
+            `);
+            
+            if (oldTableExists.rows[0].exists) {
+                console.log('📦 发现旧表结构，开始迁移...');
+                
+                // 迁移refresh_tokens到新的credentials表
+                await client.query(`
+                    INSERT INTO twitter_credentials (username, refresh_token, created_at, updated_at)
+                    SELECT username, refresh_token, created_at, updated_at
+                    FROM twitter_refresh_tokens
+                    ON CONFLICT (username) DO UPDATE SET
+                        refresh_token = EXCLUDED.refresh_token,
+                        updated_at = EXCLUDED.updated_at
+                `);
+                
+                console.log('✅ 数据迁移完成');
+                
+                // 可选：删除旧表（谨慎操作）
+                // await client.query('DROP TABLE IF EXISTS twitter_refresh_tokens');
+            } else {
+                console.log('ℹ️  无需迁移，使用新表结构');
+            }
+        } catch (error) {
+            console.error('❌ 数据迁移失败:', error.message);
+            throw error;
+        }
     }
 }

@@ -53,7 +53,7 @@ Twitter API V2免费版限制严格：
 
 ## 配置
 
-根据 .env.example的配置说明，开启twitter监控模块，将需要的配置信息填入。
+根据 .env.example的配置说明，开启twitter-official监控模块，将需要的配置信息填入。
 
 ## 使用方法
 
@@ -63,15 +63,15 @@ Twitter API V2免费版限制严格：
 
 ```bash
 # 1. 检查刷新令牌状态
-npm run twitter:refresh-token:check
+npm run twitter:official:refresh-token:check
 
 # 2. 如果未认证，启动BitBrowser后进行认证
-npm run twitter:refresh-token:auth
+npm run twitter:official:refresh-token:auth
 ```
 
 **认证步骤说明：**
 1. 启动BitBrowser指纹浏览器
-2. 运行 `npm run twitter:refresh-token:auth` 命令
+2. 运行 `npm run twitter:official:refresh-token:auth` 命令
 3. 系统会自动打开浏览器进行OAuth认证
 4. 完成认证后，refresh_token会自动保存到数据库
 5. 后续系统会自动刷新访问令牌，无需重复认证

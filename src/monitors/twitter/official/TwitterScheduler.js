@@ -2,7 +2,7 @@
  * Twitter调度器
  * 基于现有scheduler.js重构的Twitter专用调度器
  */
-import { BaseScheduler } from '../base/BaseScheduler.js';
+import { BaseScheduler } from '../../base/BaseScheduler.js';
 import cron from 'node-cron';
 
 export class TwitterScheduler extends BaseScheduler {

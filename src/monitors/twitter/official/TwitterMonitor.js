@@ -1,25 +1,37 @@
 /**
- * Twitter监控模块
- * 基于现有monitor.js重构的模块化Twitter监控器
+ * Twitter监控模块 - 重构版
+ * 采用模块化架构，职责分离，提高可维护性
  */
-import { BaseMonitor } from '../base/BaseMonitor.js';
+import { BaseMonitor } from '../../base/BaseMonitor.js';
 import { TwitterScheduler } from './TwitterScheduler.js';
-import { TwitterConfig } from './TwitterConfig.js';
-import { TwitterApiClient } from './TwitterApiClient.js';
+import { TwitterConfigManager } from './config/TwitterConfigManager.js';
+import { TwitterApiClient } from './api/TwitterApiClient.js';
+import { TwitterUserHandler } from './handlers/TwitterUserHandler.js';
+import { TwitterNotificationHandler } from './handlers/TwitterNotificationHandler.js';
+import { TwitterSharedService } from '../shared/index.js';
 import fs from 'fs';
 import path from 'path';
 
 export class TwitterMonitor extends BaseMonitor {
     constructor(sharedServices, config) {
         // config参数现在直接是Twitter模块的配置
-        super('twitter', sharedServices, config);
+        super('twitter-official', sharedServices, config);
 
-        this.twitterConfig = new TwitterConfig(config);
+        // 初始化配置管理器
+        this.configManager = new TwitterConfigManager(config);
+
+        // 初始化核心组件
         this.apiClients = new Map();
         this.dataDir = './data/monitor';
         this.scheduler = null;
+        this.lastTweetIds = new Map(); // 存储每个用户的最后推文ID
 
+        // 初始化共享服务
+        this.twitterService = new TwitterSharedService();
 
+        // 初始化处理器
+        this.userHandler = new TwitterUserHandler(this.twitterService, this.apiClients);
+        this.notificationHandler = new TwitterNotificationHandler(sharedServices, this.twitterService);
 
         // 初始化数据目录
         this.initializeDataStorage();
@@ -30,8 +42,15 @@ export class TwitterMonitor extends BaseMonitor {
      */
     async onInitialize() {
         try {
+            // 初始化共享服务
+            await this.twitterService.initialize();
+
+            // 从数据库恢复最后推文ID
+            const monitoredUsers = this.configManager.getMonitoredUsers();
+            this.lastTweetIds = await this.twitterService.loadLastTweetIdsFromDatabase(monitoredUsers);
+
             // 初始化Twitter配置
-            if (!this.twitterConfig.validate()) {
+            if (!this.configManager.validate()) {
                 console.log('');
                 console.log('🚨 Twitter模块配置不完整！');
                 console.log('📋 请按以下步骤完成配置：');
@@ -55,7 +74,7 @@ export class TwitterMonitor extends BaseMonitor {
             }
 
             // 初始化API客户端
-            const credentials = this.twitterConfig.getApiCredentials();
+            const credentials = this.configManager.getApiCredentials();
 
             for (const credential of credentials) {
                 const client = new TwitterApiClient(credential, this.getDatabase());
@@ -285,58 +304,43 @@ export class TwitterMonitor extends BaseMonitor {
      */
     async checkUserTweets(client) {
         try {
-            const credential = client.credentials;
-            const monitorUser = credential.monitorUser;
+            // 使用用户处理器检查推文
+            const checkResult = await this.userHandler.checkUserTweets(client);
 
-            // 获取上次检查的时间
-            const database = this.getDatabase();
-            const lastState = await database.getMonitorState(monitorUser, 'twitter');
-            const lastCheckTime = lastState?.last_check_time;
-
-            // 获取新推文（使用时间范围而不是推文ID）
-            const tweets = await client.getUserTweets(monitorUser, lastCheckTime);
-
-            let newTweets = 0;
-            let latestTweetTime = lastCheckTime;
-
-            // 处理每条推文
-            for (const tweet of tweets) {
-                try {
-                    // 直接发送通知，不保存推文到数据库
-                    newTweets++;
-
-                    // 更新最新推文时间
-                    const tweetTime = new Date(tweet.createdAt);
-                    if (!latestTweetTime || tweetTime > new Date(latestTweetTime)) {
-                        latestTweetTime = tweet.createdAt;
-                    }
-
-                    // 发送通知
-                    await this.sendTweetNotification(tweet, monitorUser);
-
-                } catch (error) {
-                    this.logger.error(`处理推文失败: ${tweet.id}`, { error: error.message });
-                }
+            if (!checkResult.success) {
+                return {
+                    monitorUser: checkResult.username,
+                    success: false,
+                    reason: checkResult.reason,
+                    newTweets: 0,
+                    totalTweets: 0
+                };
             }
 
-            // 更新监控状态（包含用户ID缓存）
-            if (tweets.length > 0) {
-                // 从客户端获取缓存的用户ID
-                const cachedUserInfo = client.cachedUserInfo;
-                const userId = cachedUserInfo ? cachedUserInfo.userId : null;
+            // 如果有新推文，使用通知处理器处理
+            if (checkResult.tweets && checkResult.tweets.length > 0) {
+                const notificationResult = await this.notificationHandler.processTweetNotifications(
+                    checkResult.username,
+                    checkResult.tweets,
+                    checkResult.userInfo,
+                    this.lastTweetIds
+                );
 
-                await database.updateMonitorState(monitorUser, 'twitter', {
-                    user_id: userId,
-                    last_check_time: latestTweetTime || new Date().toISOString(),
-                    last_update_time: new Date()
-                });
+                return {
+                    monitorUser: checkResult.username,
+                    success: true,
+                    newTweets: notificationResult.processed,
+                    sentNotifications: notificationResult.sent,
+                    skippedNotifications: notificationResult.skipped,
+                    latestTweetId: notificationResult.lastTweetId
+                };
             }
 
             return {
-                monitorUser,
-                newTweets,
-                totalTweets: tweets.length,
-                latestTweetTime
+                monitorUser: checkResult.username,
+                success: true,
+                newTweets: 0,
+                sentNotifications: 0
             };
 
         } catch (error) {
@@ -348,37 +352,14 @@ export class TwitterMonitor extends BaseMonitor {
 
 
     /**
-     * 发送推文通知
-     * @param {Object} tweet - 推文对象
-     * @param {string} monitorUser - 监控用户
+     * 发送推文通知（兼容共享服务接口）
+     * @param {string} username - 用户名
+     * @param {Object} formattedTweet - 格式化的推文对象
+     * @param {Object} userInfo - 用户信息
      */
-    async sendTweetNotification(tweet, monitorUser) {
-        try {
-            const notifier = this.getNotifier();
-            if (!notifier) {
-                this.logger.warn('通知器未配置，跳过通知发送');
-                return;
-            }
-
-            const tweetData = {
-                username: monitorUser,
-                content: tweet.text,
-                created_at: tweet.createdAt,
-                tweet_id: tweet.id,
-                url: tweet.url || `https://twitter.com/${monitorUser}/status/${tweet.id}`
-            };
-
-            const result = await notifier.sendNotification('twitter', tweetData);
-
-            if (result.success) {
-                this.logger.info(`Twitter通知发送成功: ${tweet.id}`);
-            } else {
-                this.logger.error(`Twitter通知发送失败: ${result.error}`);
-            }
-
-        } catch (error) {
-            this.logger.error('处理Twitter通知时出错', { error: error.message });
-        }
+    async sendTweetNotification(username, formattedTweet, userInfo) {
+        // 委托给通知处理器
+        await this.notificationHandler.sendTweetNotification(username, formattedTweet, userInfo);
     }
 
     /**
@@ -403,16 +384,8 @@ export class TwitterMonitor extends BaseMonitor {
      * @returns {Array<string>} 用户昵称列表
      */
     getMonitoredUserNicknames() {
-        const userMap = new Map();
-        
-        for (const [username, client] of this.apiClients.entries()) {
-            const monitorUser = client.credentials.monitorUser;
-            if (!userMap.has(monitorUser)) {
-                userMap.set(monitorUser, true);
-            }
-        }
-        
-        return Array.from(userMap.keys());
+        // 使用配置管理器获取监控用户列表
+        return this.configManager.getMonitoredUsers();
     }
 
     /**

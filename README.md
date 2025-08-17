@@ -5,7 +5,8 @@
 ## ✨ 核心特性
 
 ### 🎯 **多源监控支持**
-- **Twitter监控** - 定时轮询，多API凭证管理，智能时间调度
+- **Twitter官方API监控** - 定时轮询，多API凭证管理，智能时间调度，OAuth认证
+- **Twitter OpenAPI监控** - 非官方API，Cookie认证，无调用限制，实时监控
 - **Binance公告监控** - 实时WebSocket连接，公告推送监控
 - **Binance价格监控** - 价格变化预警，支持多交易对监控
 
@@ -95,7 +96,7 @@ npm install
 cp .env.example .env
 ```
 
-编辑 .env 文件，用到哪个模块就配置哪个模块。 .env.example文件里有详细的说明
+编辑 .env 文件，用到哪个模块就配置哪个模块。 .env.example文件里有详细的说明，模块文档里有各模块的操作步骤。
 
 
 ### 4. 启动系统
@@ -132,7 +133,8 @@ curl http://localhost:3000/status
 - **[.env.example](.env.example)** - 环境变量配置示例
 
 ### 模块文档
-- **[Twitter监控](src/monitors/twitter/README.md)** - Twitter监控模块详细说明
+- **[Twitter官方API监控](src/monitors/twitter/official/README.md)** - Twitter官方API监控模块详细说明
+- **[Twitter OpenAPI监控](src/monitors/twitter/openapi/README.md)** - Twitter OpenAPI监控模块详细说明
 - **[Binance公告监控](src/monitors/binance-announcement/README.md)** - Binance公告监控说明
 - **[Binance价格监控](src/monitors/binance-price/README.md)** - Binance价格监控说明
 

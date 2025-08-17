@@ -7,7 +7,7 @@ const { Pool } = pg;
 import { SchemaManager } from './schema-manager.js';
 import { BinanceAnnouncementSchema } from '../monitors/binance-announcement/schema.js';
 import { BinancePriceSchema } from '../monitors/binance-price/schema.js';
-import { TwitterSchema } from '../monitors/twitter/schema.js';
+import { TwitterSharedSchema } from '../monitors/twitter/shared/schema.js';
 
 export class UnifiedDatabaseManager {
     constructor() {
@@ -19,7 +19,7 @@ export class UnifiedDatabaseManager {
         // 注册模块表结构
         this.schemaManager.registerModuleSchema('binance-announcement', BinanceAnnouncementSchema);
         this.schemaManager.registerModuleSchema('binance-price', BinancePriceSchema);
-        this.schemaManager.registerModuleSchema('twitter', TwitterSchema);
+        this.schemaManager.registerModuleSchema('twitter', TwitterSharedSchema);
     }
 
     /**

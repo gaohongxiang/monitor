@@ -86,10 +86,19 @@ graph TB
 - **UnifiedLoggerManager**: 结构化日志记录和文件管理
 
 #### 3. Twitter监控模块
-- **TwitterMonitor**: Twitter监控主控制器
+
+##### 3.1 Twitter官方API监控
+- **TwitterMonitor**: Twitter官方API监控主控制器
 - **TwitterScheduler**: 智能时间调度，支持多API凭证轮换
 - **TwitterApiClient**: Twitter API客户端，OAuth2认证和推文获取
-- **特点**: 定时轮询模式，避免API限流
+- **TwitterAuthenticator**: OAuth认证工具，支持BitBrowser指纹浏览器
+- **特点**: 定时轮询模式，避免API限流，需要开发者账号
+
+##### 3.2 Twitter OpenAPI监控
+- **TwitterOpenApiMonitor**: Twitter OpenAPI监控主控制器
+- **TwitterCookieManager**: Cookie管理器，自动刷新ct0令牌
+- **TwitterCredentialsManager**: 凭证管理器，数据库存储Cookie
+- **特点**: 实时监控模式，无API限制，使用Cookie认证
 
 #### 4. Binance公告监控模块
 - **BinanceAnnouncementMonitor**: Binance公告监控器
@@ -177,9 +186,15 @@ API_CREDENTIALS='[
   }
 ]'
 
-# 可选配置
+# Twitter官方API可选配置
 MONITOR_START_TIME=09:00  # 生产环境监控开始时间（北京时间UTC+8）
 MONITOR_END_TIME=23:00    # 生产环境监控结束时间（北京时间UTC+8）
+
+# Twitter OpenAPI配置
+TWITTER_OPENAPI_ENABLED=true
+TWITTER_MONITOR_USERS=elonmusk,sundarpichai  # 要监控的用户
+TWITTER_OPENAPI_INTERVAL=300                 # 检查间隔（秒）
+# TWITTER_OPENAPI_PROXY=socks://username:password@proxy_host:proxy_port
 ```
 
 ### 数据库表结构
@@ -201,16 +216,33 @@ CREATE TABLE notification_history (
 ```
 
 #### Twitter监控模块表结构
+
+##### Twitter官方API表结构
 ```sql
--- Twitter刷新令牌表
+-- Twitter刷新令牌表（官方API使用）
 CREATE TABLE twitter_refresh_tokens (
     username VARCHAR(255) UNIQUE NOT NULL,
     refresh_token TEXT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+```
 
--- Twitter处理记录表（防重复）
+##### Twitter共享表结构
+```sql
+-- Twitter凭证管理表（官方API和OpenAPI共用）
+CREATE TABLE twitter_credentials (
+    id SERIAL PRIMARY KEY,
+    username VARCHAR(255) UNIQUE NOT NULL,
+    refresh_token TEXT,                    -- 官方API使用
+    openapi_auth_token TEXT,               -- OpenAPI使用
+    openapi_ct0_token TEXT,                -- OpenAPI使用
+    openapi_ct0_updated_at TIMESTAMP,      -- CT0更新时间
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Twitter处理记录表（防重复，两种API共用）
 CREATE TABLE twitter_processed_records (
     id SERIAL PRIMARY KEY,
     monitor_user VARCHAR(255) NOT NULL,
@@ -524,25 +556,48 @@ class MonitorOrchestrator {
 }
 ```
 
-## Twitter认证系统（仅Twitter监控需要）
+## Twitter认证系统
 
-### 认证流程
+### Twitter官方API认证
+
+#### 认证流程
 ```bash
-# 认证所有Twitter API凭证
-npm run auth
+# 认证所有Twitter官方API凭证
+npm run twitter:official:refresh-token:auth
 
 # 检查认证状态
-npm run auth:check
+npm run twitter:official:refresh-token:check
 ```
 
-### 认证工作原理
+### Twitter OpenAPI凭证管理
+
+#### 凭证管理流程
+```bash
+# 启动凭证管理器
+npm run twitter:openapi:credentials
+
+# 选择操作：
+# 1. 添加/更新用户凭证
+# 2. 查看所有凭证
+# 3. 删除用户凭证
+# 4. 检查ct0令牌状态
+```
+
+#### Twitter官方API认证工作原理
 1. **读取配置** - 从环境变量解析API_CREDENTIALS
 2. **数据库初始化** - 自动创建必要的表结构
 3. **浏览器启动** - 使用指纹浏览器进行OAuth认证
 4. **Token保存** - 将获得的refreshToken保存到数据库
 5. **状态验证** - 验证认证是否成功
 
-**注意**：Binance监控只需要API密钥，无需OAuth认证流程。
+#### Twitter OpenAPI凭证管理原理
+1. **Cookie获取** - 用户从浏览器手动获取auth_token和ct0
+2. **凭证存储** - 通过管理脚本将Cookie存储到数据库
+3. **自动检测** - 系统自动选择最佳的Cookie用户
+4. **令牌刷新** - ct0令牌自动刷新和状态监控
+5. **健康检查** - 定期验证Cookie有效性
+
+**注意**：Binance监控只需要API密钥，无需认证流程。
 
 ## 统一数据库管理
 
@@ -891,10 +946,10 @@ GET /status
 3. **认证API凭证**
    ```bash
    # 认证所有凭证
-   npm run auth
-   
+   npm run twitter:official:refresh-token:auth
+
    # 检查认证状态
-   npm run auth:check
+   npm run twitter:official:refresh-token:check
    ```
 
 4. **启动系统**
@@ -914,27 +969,32 @@ npm start            # 生产模式启动
 # 开发模式
 npm run dev          # 开发模式启动（测试间隔1分钟）
 
-# Twitter认证管理（仅Twitter监控需要）
-npm run auth         # 认证所有Twitter凭证
-npm run auth:check   # 检查Twitter认证状态
+# Twitter认证管理（仅Twitter官方API监控需要）
+npm run twitter:official:refresh-token:auth   # 认证所有Twitter凭证
+npm run twitter:official:refresh-token:check  # 检查Twitter认证状态
+
+# Twitter OpenAPI凭证管理
+npm run twitter:openapi:credentials           # OpenAPI凭证管理器
 ```
 
 ### 配置示例
 ```bash
 # .env文件示例 - 多源监控配置
 # 模块控制
-TWITTER_ENABLED=true
-BINANCE_ENABLED=true
+TWITTER_OFFICIAL_ENABLED=true      # Twitter官方API监控
+TWITTER_OPENAPI_ENABLED=true       # Twitter OpenAPI监控
+BINANCE_ANNOUNCEMENT_ENABLED=true  # Binance公告监控
+BINANCE_PRICE_ENABLED=true         # Binance价格监控
 
-# 通知配置
+# 通用配置
 DINGTALK_ACCESS_TOKEN=your_dingtalk_token
+DATABASE_URL=postgresql://user:pass@host:port/db
 
 # Binance监控配置
 BINANCE_API_KEY=your_binance_api_key
 BINANCE_SECRET_KEY=your_binance_secret_key
 
-# Twitter监控配置
-DATABASE_URL=postgresql://user:pass@host:port/db
+# Twitter官方API监控配置
 API_CREDENTIALS='[
   {
     "monitorUser": "binancezh",
@@ -950,6 +1010,10 @@ API_CREDENTIALS='[
     ]
   }
 ]'
+
+# Twitter OpenAPI监控配置
+TWITTER_MONITOR_USERS=elonmusk,sundarpichai
+TWITTER_OPENAPI_INTERVAL=300
 MONITOR_START_TIME=09:00  # 北京时间UTC+8
 MONITOR_END_TIME=23:00    # 北京时间UTC+8
 ```
@@ -1005,7 +1069,7 @@ DEBUG=* npm run dev
 curl http://localhost:3000/health
 
 # 查看认证状态
-npm run auth:check
+npm run twitter:official:refresh-token:check
 
 # 手动测试单个功能
 node -e "require('./src/test_specific_function.js')"

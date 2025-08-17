@@ -109,22 +109,45 @@ export class MonitorOrchestrator {
                 } else {
                     console.error(`❌ 模块 ${moduleName} 启动失败`);
 
-                    // 为Twitter模块提供特殊提示
-                    if (moduleName === 'twitter') {
+                    // 为Twitter官方API模块提供特殊提示
+                    if (moduleName === 'twitter-official') {
                         console.log('');
-                        console.log('🚨 Twitter模块启动失败！');
+                        console.log('🚨 Twitter官方API模块启动失败！');
                         console.log('');
                         console.log('📋 可能的原因：');
-                        console.log('1. 缺少Twitter API凭证配置');
+                        console.log('1. 缺少Twitter官方API凭证配置');
                         console.log('2. 未完成OAuth认证流程');
+                        console.log('3. BitBrowser指纹浏览器未启动');
                         console.log('');
                         console.log('🛠️ 解决步骤：');
-                        console.log('1. 检查刷新令牌状态: npm run twitter:refresh-token:check');
+                        console.log('1. 检查刷新令牌状态: npm run twitter:official:refresh-token:check');
                         console.log('2. 启动BitBrowser指纹浏览器');
-                        console.log('3. 进行刷新令牌认证: npm run twitter:refresh-token:auth');
+                        console.log('3. 进行刷新令牌认证: npm run twitter:official:refresh-token:auth');
                         console.log('4. 重新启动系统: npm run dev');
                         console.log('');
-                        console.log('📚 详细配置说明: src/monitors/twitter/README.md');
+                        console.log('📚 详细配置说明: src/monitors/twitter/official/README.md');
+                        console.log('');
+                    }
+
+                    // 为Twitter OpenAPI模块提供特殊提示
+                    if (moduleName === 'twitter-openapi') {
+                        console.log('');
+                        console.log('🚨 Twitter OpenAPI模块启动失败！');
+                        console.log('');
+                        console.log('📋 可能的原因：');
+                        console.log('1. 缺少Twitter OpenAPI凭证配置');
+                        console.log('2. Cookie已过期或无效');
+                        console.log('3. 网络连接问题或代理配置错误');
+                        console.log('4. Twitter账号被限制');
+                        console.log('');
+                        console.log('🛠️ 解决步骤：');
+                        console.log('1. 管理OpenAPI凭证: npm run twitter:openapi:credentials');
+                        console.log('2. 重新获取Twitter Cookie (auth_token, ct0)');
+                        console.log('3. 检查代理配置和网络连接');
+                        console.log('4. 验证Twitter账号状态');
+                        console.log('5. 重新启动系统: npm run dev');
+                        console.log('');
+                        console.log('📚 详细配置说明: src/monitors/twitter/openapi/README.md');
                         console.log('');
                     }
                 }

@@ -20,8 +20,12 @@ export class UnifiedConfigManager {
         const enabledModules = [];
 
         // 简单的环境变量检查
-        if (process.env.TWITTER_ENABLED === 'true') {
-            enabledModules.push('twitter');
+        if (process.env.TWITTER_OFFICIAL_ENABLED === 'true') {
+            enabledModules.push('twitter-official');
+        }
+
+        if (process.env.TWITTER_OPENAPI_ENABLED === 'true') {
+            enabledModules.push('twitter-openapi');
         }
 
         if (process.env.BINANCE_ANNOUNCEMENT_ENABLED === 'true') {
@@ -65,7 +69,8 @@ export class UnifiedConfigManager {
 
             // 模块配置
             modules: {
-                twitter: this.loadTwitterConfig(),
+                'twitter-official': this.loadTwitterConfig(),
+                'twitter-openapi': this.loadTwitterOpenApiConfig(),
                 'binance-announcement': this.loadBinanceAnnouncementConfig(),
                 'binance-price': this.loadBinancePriceConfig()
             },
@@ -105,7 +110,7 @@ export class UnifiedConfigManager {
             const apiCredentials = this.convertNestedToInternalFormat(nestedConfig);
 
             return {
-                enabled: process.env.TWITTER_ENABLED === 'true',
+                enabled: process.env.TWITTER_OFFICIAL_ENABLED === 'true',
                 apiCredentials: apiCredentials,
                 monitorSettings: {
                     startTimeUTC8: process.env.MONITOR_START_TIME || "09:00",
@@ -121,6 +126,31 @@ export class UnifiedConfigManager {
             console.error('❌ Twitter配置解析失败:', error.message);
             return { enabled: false };
         }
+    }
+
+    /**
+     * 加载Twitter OpenAPI配置
+     */
+    loadTwitterOpenApiConfig() {
+        return {
+            enabled: process.env.TWITTER_OPENAPI_ENABLED === 'true',
+            mode: process.env.TWITTER_OPENAPI_MODE || 'authenticated', // 'guest' 或 'authenticated'
+            monitoredUsers: process.env.TWITTER_MONITOR_USERS ?
+                process.env.TWITTER_MONITOR_USERS.split(',').map(u => u.trim()) :
+                ['elonmusk'],
+            checkInterval: parseInt(process.env.TWITTER_OPENAPI_CHECK_INTERVAL || '300'), // 5分钟
+            proxy: process.env.TWITTER_OPENAPI_PROXY,
+
+            // 认证模式配置（从数据库读取，不再使用环境变量）
+
+            // 通知配置
+            notification: {
+                enabled: process.env.TWITTER_OPENAPI_NOTIFICATION_ENABLED !== 'false',
+                dingtalk: {
+                    enabled: process.env.DINGTALK_ACCESS_TOKEN ? true : false
+                }
+            }
+        };
     }
 
     /**

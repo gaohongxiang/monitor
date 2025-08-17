@@ -34,7 +34,8 @@ class MultiSourceMonitorApp {
             this.sharedServices.config = unifiedConfigManager;
 
             // 2. 初始化数据库管理器（Twitter监控和Binance去重都需要）
-            const needsDatabase = config.system.enabledModules.includes('twitter') ||
+            const needsDatabase = config.system.enabledModules.includes('twitter-official') ||
+                                 config.system.enabledModules.includes('twitter-openapi') ||
                                  config.system.enabledModules.includes('binance-announcement') ||
                                  config.system.enabledModules.includes('binance-price');
 

@@ -5,16 +5,26 @@
 
 // 监控模块映射表
 const MONITOR_REGISTRY = {
-    'twitter': {
-        name: 'twitter',
+    'twitter-official': {
+        name: 'twitter-official',
         type: 'social_media',
-        description: 'Twitter用户监控',
+        description: 'Twitter官方API监控',
         factory: async (sharedServices, config) => {
-            const { TwitterMonitor } = await import('./twitter/TwitterMonitor.js');
+            const { TwitterMonitor } = await import('./twitter/official/TwitterMonitor.js');
             return new TwitterMonitor(sharedServices, config);
         }
     },
-    
+
+    'twitter-openapi': {
+        name: 'twitter-openapi',
+        type: 'social_media',
+        description: 'Twitter OpenAPI监控 (认证模式)',
+        factory: async (sharedServices, config) => {
+            const { TwitterOpenApiMonitor } = await import('./twitter/openapi/TwitterOpenApiMonitor.js');
+            return new TwitterOpenApiMonitor(sharedServices, config);
+        }
+    },
+
     'binance-announcement': {
         name: 'binance-announcement',
         type: 'crypto_announcement',
@@ -33,7 +43,7 @@ const MONITOR_REGISTRY = {
             const { BinancePriceMonitor } = await import('./binance-price/BinancePriceMonitor.js');
             return new BinancePriceMonitor(sharedServices, config);
         }
-    }
+    },
 };
 
 /**
@@ -64,12 +74,12 @@ export function hasMonitor(moduleName) {
  */
 export async function createMonitor(moduleName, sharedServices, config) {
     const moduleInfo = MONITOR_REGISTRY[moduleName];
-    
+
     if (!moduleInfo) {
         console.warn(`❌ 未知的监控模块: ${moduleName}`);
         return null;
     }
-    
+
     try {
         console.log(`🔧 创建监控模块: ${moduleName}`);
         const monitor = await moduleInfo.factory(sharedServices, config);
@@ -90,11 +100,11 @@ export function registerMonitor(name, moduleInfo) {
     if (MONITOR_REGISTRY[name]) {
         console.warn(`⚠️  监控模块 ${name} 已存在，将被覆盖`);
     }
-    
+
     MONITOR_REGISTRY[name] = {
         name,
         ...moduleInfo
     };
-    
+
     console.log(`✅ 监控模块 ${name} 注册成功`);
 }

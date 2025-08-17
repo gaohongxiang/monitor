@@ -7,8 +7,9 @@
   "scripts": {
     "start": "NODE_ENV=production node src/index.js",
     "dev": "NODE_ENV=development TEST_MODE=true TEST_INTERVAL=1 node src/index.js",
-    "twitter:refresh-token:auth": "node -e \"import('./src/monitors/twitter/TwitterAuthenticator.js').then(m => { const auth = new m.TwitterAuthenticator(); auth.initializeDatabase().then(() => auth.authenticateAllCredentials()); })\"",
-    "twitter:refresh-token:check": "node -e \"import('./src/monitors/twitter/TwitterAuthenticator.js').then(m => { const auth = new m.TwitterAuthenticator(); auth.initializeDatabase().then(() => auth.checkAuthenticationStatus()); })\""
+    "twitter:official:refresh-token:auth": "node -e \"import('./src/monitors/twitter/official/auth/TwitterAuthManager.js').then(m => { const auth = new m.TwitterAuthManager(); auth.initializeDatabase().then(() => auth.authenticateAllCredentials()); })\"",
+    "twitter:official:refresh-token:check": "node -e \"import('./src/monitors/twitter/official/auth/TwitterAuthManager.js').then(m => { const auth = new m.TwitterAuthManager(); auth.initializeDatabase().then(() => auth.checkAuthenticationStatus()); })\"",
+    "twitter:openapi:credentials": "node src/monitors/twitter/openapi/credentials-manager.js"
   },
   "keywords": [
     "twitter",
@@ -33,6 +34,7 @@
     "playwright": "^1.54.1",
     "socks-proxy-agent": "^8.0.5",
     "twitter-api-v2": "^1.24.0",
+    "twitter-openapi-typescript": "^0.0.55",
     "ws": "^8.18.3"
   }
 }
