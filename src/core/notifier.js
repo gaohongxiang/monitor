@@ -955,11 +955,12 @@ export class TwitterMessageFormatter {
         const username = tweet.username || tweet.author;
         const displayName = tweet.displayName || tweet.author || username;
 
-        return `📝 新推文：${content}
+        return `🐦 新推文：${content}
 
-👤 ${displayName} (@${username})
+👤 ${displayName}
 🕒 ${beijingTime}
-🔗 ${tweet.url}`;
+
+${tweet.url}`;
     }
 
     /**
@@ -1023,15 +1024,15 @@ export class BinanceMessageFormatter {
         // 如果有原文且与翻译不同，则显示原文
         const showOriginal = originalTitle && originalTitle !== title;
 
-        let message = `📢 公告：${title}`;
+        let message = `📢 新公告：${title}`;
 
         if (showOriginal) {
-            message += `\n\n📝 原文:\n${originalTitle}`;
+            message += `\n\n📝 原文：${originalTitle}`;
         }
 
-        message += `\n\n🏷️ 分类: ${announcement.category || '未分类'}`;
-        message += `\n📅 发布时间: ${announcement.publishTime || '未知时间'}`;
-        message += `\n🔗 查看详情: ${announcement.url || 'https://www.binance.com/en/support/announcement'}`;
+        message += `\n\n🏷️ ${announcement.category || '未分类'}`;
+        message += `\n🕒 ${announcement.publishTime || '未知时间'}`;
+        message += `\n\n${announcement.url || 'https://www.binance.com/en/support/announcement'}`;
 
         return message;
     }

@@ -142,16 +142,8 @@ export class TwitterNotificationHandler {
             return formatter.format(tweetData);
         }
 
-        // 降级处理（如果没有统一格式化器）
-        const verifiedIcon = userInfo.verified ? '✅' : '';
-        const tweetText = this.truncateText(formattedTweet.text, 200);
-        const beijingTime = this.formatBeijingTime(formattedTweet.createdAt);
-
-        return `📝 新推文：${tweetText}
-
-👤 ${userInfo.name || username} (@${username}) ${verifiedIcon}
-🕒 ${beijingTime}
-🔗 ${formattedTweet.url}`;
+        // 如果没有统一格式化器，返回错误
+        throw new Error('统一格式化器未配置');
     }
 
     /**
