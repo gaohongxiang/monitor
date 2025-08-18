@@ -128,8 +128,24 @@ Railway不再提供免费版服务，推荐使用Render进行部署。
 2. **部署Web Service**
    - Dashboard → New → Web Service
    - 连接GitHub仓库，选择本项目
-   - 配置基本信息
-   - 在Environment页面添加所有必要的环境变量（可直接导入.env中的配置）
+   - 配置基本信息：
+     ```
+     Name: monitor-system
+     Environment: Node
+     Build Command: npm install
+     Start Command: npm start
+     ```
+
+3. **配置环境变量**
+   - 在Environment页面添加所有必要的环境变量
+   - 参考 `.env.example` 文件配置
+
+4. **设置健康检查**
+   - 在Advanced页面设置：
+     ```
+     Health Check Path: /health
+     ```
+   - 确保服务正常运行和自动重启
 
 ### 保活设置（重要）
 
