@@ -1,6 +1,6 @@
 /**
- * Twitter OpenAPI 监控器 - 可行性测试版本
- * 使用游客模式测试基础功能
+ * Twitter OpenAPI 监控器
+ * 使用Cookie认证模式监控Twitter用户推文
  */
 import { BaseMonitor } from '../../base/BaseMonitor.js';
 import { TwitterSharedService } from '../shared/index.js';
@@ -29,9 +29,10 @@ class TwitterCookieManager {
                 ct0: this.ct0
             });
 
-            // 尝试获取一个知名用户信息来验证
+            // 尝试获取配置的第一个用户信息来验证
+            const testUser = this.monitoredUsers[0] || 'binancezh';
             const response = await client.getUserApi()
-                .getUserByScreenName({ screenName: 'elonmusk' });
+                .getUserByScreenName({ screenName: testUser });
 
             if (response.data?.user?.legacy) {
                 this.lastValidation = new Date();
@@ -147,8 +148,8 @@ export class TwitterOpenApiMonitor extends BaseMonitor {
             return this.config.monitoredUsers;
         }
 
-        // 默认测试用户
-        return ['elonmusk', 'sundarpichai'];
+        // 默认用户（如果没有配置）
+        return ['binancezh'];
     }
 
     /**
@@ -196,8 +197,8 @@ export class TwitterOpenApiMonitor extends BaseMonitor {
             // 初始化认证模式
             await this.initializeAuthenticatedMode();
 
-            // 测试连接
-            await this.testConnection();
+            // 验证连接
+            await this.validateConnection();
 
             return true;
         } catch (error) {
@@ -274,35 +275,30 @@ export class TwitterOpenApiMonitor extends BaseMonitor {
     }
 
     /**
-     * 测试连接
+     * 验证连接
      */
-    async testConnection() {
+    async validateConnection() {
         try {
-            console.log('🧪 测试 Twitter OpenAPI 连接...');
+            console.log('🔗 验证 Twitter OpenAPI 连接...');
 
-            // 尝试获取一个知名用户的信息
-            console.log('   调用 getUserByScreenName API...');
+            // 使用配置的第一个用户验证连接
+            const testUser = this.monitoredUsers[0];
+            console.log(`   验证用户: @${testUser}`);
+
             const response = await this.client.getUserApi()
-                .getUserByScreenName({ screenName: 'elonmusk' });
-
-            console.log('   API响应:', JSON.stringify(response, null, 2));
+                .getUserByScreenName({ screenName: testUser });
 
             if (response.data?.user?.legacy) {
-                console.log('✅ 连接测试成功');
-                console.log(`   测试用户: @${response.data.user.legacy.screenName}`);
-                console.log(`   关注者数: ${response.data.user.legacy.followersCount}`);
+                console.log('✅ 连接验证成功');
+                console.log(`   用户: ${response.data.user.legacy.name} (@${response.data.user.legacy.screenName})`);
+                console.log(`   关注者: ${response.data.user.legacy.followersCount}`);
+            } else if (response.data?.user) {
+                console.log('✅ 连接验证成功（数据结构异常但可用）');
             } else {
-                console.log('⚠️  响应结构异常，尝试其他字段...');
-                if (response.data?.user) {
-                    console.log('   用户数据存在，但结构可能不同');
-                    console.log('   用户数据:', JSON.stringify(response.data.user, null, 2));
-                } else {
-                    throw new Error('无法获取用户数据');
-                }
+                throw new Error('无法获取用户数据');
             }
         } catch (error) {
-            console.error('❌ 连接测试失败:', error.message);
-            console.error('   错误详情:', error);
+            console.error('❌ 连接验证失败:', error.message);
             throw error;
         }
     }
@@ -579,7 +575,7 @@ export class TwitterOpenApiMonitor extends BaseMonitor {
                     tweets,
                     userInfo,
                     this.lastTweetIds,
-                    this.sharedServices?.notifier || this
+                    this  // 始终传入this，因为this有sendTweetNotification方法
                 );
 
                 console.log(`   ✅ 处理完成: ${result.processedCount}/${result.totalTweets} 条推文`);
