@@ -140,12 +140,9 @@ Railway不再提供免费版服务，推荐使用Render进行部署。
    - 在Environment页面添加所有必要的环境变量
    - 参考 `.env.example` 文件配置
 
-4. **设置健康检查**
-   - 在Advanced页面设置：
-     ```
-     Health Check Path: /health
-     ```
-   - 确保服务正常运行和自动重启
+4. **部署完成**
+   - 等待部署完成，获取应用URL
+   - 不需要设置Render内部健康检查，我们使用外部监控
 
 ### 保活设置（重要）
 

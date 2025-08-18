@@ -130,7 +130,7 @@ class MultiSourceMonitorApp {
                     // 识别Render平台健康检查
                     const isRenderHealthCheck = userAgent.includes('Render/');
                     const source = isRenderHealthCheck ? 'Render平台' : '外部监控';
-                    console.log(`� 健康检查: ${source} | ${req.method} ${req.url} [10秒内不再记录此类请求]`);
+                    console.log(`💓 健康检查: ${source} | ${req.method} ${req.url} `);
                     this.lastLogTime = now;
                 }
             } else {
