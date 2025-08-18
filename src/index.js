@@ -117,7 +117,6 @@ class MultiSourceMonitorApp {
         this.httpServer = http.createServer(async (req, res) => {
             // 记录请求日志
             console.log(`📡 HTTP请求: ${req.method} ${req.url}`);
-            console.log(`📡 URL匹配检查: req.url === '/health' ? ${req.url === '/health'}`);
 
             // 设置CORS头
             res.setHeader('Access-Control-Allow-Origin', '*');
@@ -128,28 +127,37 @@ class MultiSourceMonitorApp {
             if ((req.method === 'GET' || req.method === 'HEAD') && req.url === '/health') {
                 // 健康检查端点
                 try {
-                    console.log('🔍 开始健康检查...');
                     const status = this.orchestrator.getSystemStatus();
-                    console.log('📊 系统状态:', JSON.stringify(status, null, 2));
-
                     const isHealthy = status.orchestrator.status === 'running' &&
                                     status.orchestrator.activeModules > 0;
 
-                    console.log(`💚 健康状态: ${isHealthy ? 'healthy' : 'unhealthy'}`);
-
                     res.statusCode = isHealthy ? 200 : 503;
-                    console.log(`📡 HTTP响应状态码: ${res.statusCode}`);
 
-                    res.end(JSON.stringify({
-                        status: isHealthy ? 'healthy' : 'unhealthy',
-                        timestamp: new Date().toISOString(),
-                        ...status
-                    }, null, 2));
+                    // 设置响应头，让UptimeRobot知道服务状态
+                    res.setHeader('X-Health-Status', isHealthy ? 'healthy' : 'unhealthy');
+                    res.setHeader('X-Active-Modules', status.orchestrator.activeModules.toString());
+
+                    // HEAD请求只返回头部，不返回响应体
+                    if (req.method === 'HEAD') {
+                        res.end();
+                    } else {
+                        // GET请求返回完整的JSON响应
+                        res.end(JSON.stringify({
+                            status: isHealthy ? 'healthy' : 'unhealthy',
+                            timestamp: new Date().toISOString(),
+                            ...status
+                        }, null, 2));
+                    }
                 } catch (error) {
                     console.error('❌ 健康检查异常:', error.message);
                     res.statusCode = 500;
-                    console.log(`📡 HTTP响应状态码: ${res.statusCode}`);
-                    res.end(JSON.stringify({ error: error.message }, null, 2));
+                    res.setHeader('X-Health-Status', 'error');
+
+                    if (req.method === 'HEAD') {
+                        res.end();
+                    } else {
+                        res.end(JSON.stringify({ error: error.message }, null, 2));
+                    }
                 }
 
             } else if (req.method === 'GET' && req.url === '/status') {
