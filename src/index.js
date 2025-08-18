@@ -127,7 +127,10 @@ class MultiSourceMonitorApp {
             // 对于健康检查请求，限制日志频率
             if (req.url === '/health' || req.url === '/') {
                 if (now - this.lastLogTime > this.logInterval) {
-                    console.log(`📡 HTTP请求: ${req.method} ${req.url} | IP: ${clientIP} | UA: ${userAgent.substring(0, 50)} [频繁请求，10秒内不再记录]`);
+                    // 识别Render平台健康检查
+                    const isRenderHealthCheck = userAgent.includes('Render/');
+                    const source = isRenderHealthCheck ? 'Render平台' : '外部监控';
+                    console.log(`� 健康检查: ${source} | ${req.method} ${req.url} [10秒内不再记录此类请求]`);
                     this.lastLogTime = now;
                 }
             } else {
