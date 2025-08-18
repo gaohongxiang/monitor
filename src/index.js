@@ -114,9 +114,26 @@ class MultiSourceMonitorApp {
     startHealthCheckServer() {
         const port = this.sharedServices.config.config.system.port;
 
+        // 请求日志频率限制
+        this.lastLogTime = 0;
+        this.logInterval = 10000; // 10秒内只记录一次健康检查请求
+
         this.httpServer = http.createServer(async (req, res) => {
-            // 记录请求日志
-            console.log(`📡 HTTP请求: ${req.method} ${req.url}`);
+            // 记录请求日志，包含来源信息（带频率限制）
+            const now = Date.now();
+            const userAgent = req.headers['user-agent'] || 'Unknown';
+            const clientIP = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'Unknown';
+
+            // 对于健康检查请求，限制日志频率
+            if (req.url === '/health' || req.url === '/') {
+                if (now - this.lastLogTime > this.logInterval) {
+                    console.log(`📡 HTTP请求: ${req.method} ${req.url} | IP: ${clientIP} | UA: ${userAgent.substring(0, 50)} [频繁请求，10秒内不再记录]`);
+                    this.lastLogTime = now;
+                }
+            } else {
+                // 非健康检查请求正常记录
+                console.log(`📡 HTTP请求: ${req.method} ${req.url} | IP: ${clientIP} | UA: ${userAgent.substring(0, 50)}`);
+            }
 
             // 设置CORS头
             res.setHeader('Access-Control-Allow-Origin', '*');
