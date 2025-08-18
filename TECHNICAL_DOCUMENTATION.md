@@ -26,7 +26,7 @@
 ### 🌍 **部署与运维**
 - **环境分离** - 支持开发和生产环境配置
 - **优雅关闭** - 支持信号处理和资源清理
-- **Railway部署** - 支持一键部署到云平台
+- **Render部署** - 支持一键部署到云平台
 
 ## 系统架构
 
@@ -717,7 +717,7 @@ flowchart TD
 const poolConfig = {
     max: 5,                    // 减少最大连接数
     min: 1,                    // 减少最小连接数
-    idleTimeoutMillis: 240000, // 4分钟空闲超时（小于Railway的5分钟限制）
+    idleTimeoutMillis: 240000, // 4分钟空闲超时
     connectionTimeoutMillis: 5000,
     acquireTimeoutMillis: 10000,
     keepAlive: true,
@@ -901,11 +901,12 @@ GET /status
 
 ## 部署架构
 
-### Railway部署
-- **自动容器化** - 支持Railway的自动容器化
-- **环境变量管理** - 通过Railway控制台管理环境变量
+### Render部署
+- **自动容器化** - 支持Render的自动容器化
+- **环境变量管理** - 通过Render控制台管理环境变量
 - **数据库集成** - 使用Supabase PostgreSQL数据库服务
 - **健康检查** - 内置HTTP健康检查端点
+- **保活监控** - 使用UptimeRobot防止服务休眠
 
 ### 部署配置
 ```json
@@ -1110,7 +1111,7 @@ node -e "require('./src/test_specific_function.js')"
 - ✅ **ACID特性** - 强一致性，确保数据完整性
 - ✅ **扩展性** - 支持复杂查询和索引优化
 - ✅ **开源免费** - 无许可费用，社区活跃
-- ✅ **Railway支持** - Railway平台原生支持，一键部署
+- ✅ **云平台支持** - 主流云平台原生支持，一键部署
 
 **vs MySQL：**
 - PostgreSQL的JSON处理能力更强
@@ -1138,27 +1139,27 @@ CREATE INDEX idx_monitor_state_success ON monitor_state(last_success_time);
 
 ### 部署平台选择
 
-#### Railway vs Heroku vs Vercel vs AWS
-**选择：Railway**
+#### Render vs Heroku vs Vercel vs AWS
+**选择：Render**
 
-**Railway优势：**
+**Render优势：**
 - ✅ **简单部署** - GitHub连接后自动部署，无需复杂配置
-- ✅ **数据库集成** - 一键添加PostgreSQL，自动设置连接
+- ✅ **免费额度充足** - 750小时/月，足够小项目使用
 - ✅ **环境变量管理** - 友好的环境变量配置界面
-- ✅ **合理定价** - 免费额度足够小项目使用
 - ✅ **容器化支持** - 自动检测Node.js项目并容器化
+- ✅ **健康检查** - 内置健康检查机制
 
 **vs Heroku：**
-- Railway价格更便宜
+- Render免费版更持久
 - 更现代的用户界面
-- 更好的数据库集成
+- 更好的性能表现
 
 **vs Vercel：**
 - Vercel主要面向前端，不适合长时间运行的后端服务
-- Railway更适合定时任务和数据库应用
+- Render更适合定时任务和数据库应用
 
 **vs AWS：**
-- Railway配置更简单，无需复杂的AWS服务配置
+- Render配置更简单，无需复杂的AWS服务配置
 - 更适合中小型项目
 - 成本更可控
 
@@ -1508,7 +1509,7 @@ const nodeEnv = process.env.NODE_ENV || 'development';
 - **Twitter API**: twitter-api-v2
 - **浏览器自动化**: playwright
 - **代理支持**: socks-proxy-agent
-- **部署平台**: Railway
+- **部署平台**: Render
 
 ## 项目结构
 ```
@@ -1582,7 +1583,7 @@ multi-source-monitor/
 - ✅ 智能时间调度算法
 - ✅ 数据库持久化存储
 - ✅ 环境分离支持
-- ✅ Railway部署支持
+- ✅ Render部署支持
 
 ### v1.x.x (历史版本)
 - 基于config.json的配置管理
@@ -1617,7 +1618,7 @@ multi-source-monitor/
 ### 核心技术
 - **运行时**: Node.js 18+
 - **数据库**: PostgreSQL (Supabase)
-- **部署平台**: Railway
+- **部署平台**: Render
 
 ### Twitter监控技术栈
 - **API**: Twitter API v2

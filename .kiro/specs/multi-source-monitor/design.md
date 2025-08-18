@@ -839,29 +839,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
 CMD ["npm", "start"]
 ```
 
-### Railway部署配置
-
-```json
-{
-  "build": {
-    "builder": "NIXPACKS"
-  },
-  "deploy": {
-    "startCommand": "npm start",
-    "restartPolicyType": "ON_FAILURE",
-    "restartPolicyMaxRetries": 3,
-    "healthcheckPath": "/health",
-    "healthcheckTimeout": 10
-  },
-  "environments": {
-    "production": {
-      "variables": {
-        "NODE_ENV": "production",
-        "MONITOR_MODULES": "twitter,binance"
-      }
-    }
-  }
-}
-```
-
 这个设计文档涵盖了多监控源系统的完整架构设计，包括模块化架构、币安监控实现、共享服务设计、数据模型、核心算法和部署策略。整个设计保持了高度的模块化和可扩展性，为后续添加更多监控源奠定了坚实的基础。

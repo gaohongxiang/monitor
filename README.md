@@ -25,7 +25,7 @@
 ### 🌍 **部署与运维**
 - **环境分离** - 支持开发和生产环境配置
 - **优雅关闭** - 支持信号处理和资源清理
-- **Railway部署** - 支持一键部署到云平台
+- **Render部署** - 支持一键部署到云平台
 
 ## 准备工作
 
@@ -117,14 +117,50 @@ curl http://localhost:3000/health
 curl http://localhost:3000/status
 ```
 
-## 🐳 Railway部署
+## 🚀 Render部署
+
+Railway不再提供免费版服务，推荐使用Render进行部署。
 
 ### 一键部署
-1. 访问 [Railway官网](https://railway.app/) 并登录
-2. 连接GitHub仓库，选择本项目
-3. 在Railway控制台设置环境变量
-4. 系统自动部署并启动
-5. 30天/$5试用期，到期后可续费或想办法重新试用
+1. **创建Render账户**
+   - 访问 [Render官网](https://render.com) 并使用GitHub账户登录
+
+2. **部署Web Service**
+   - Dashboard → New → Web Service
+   - 连接GitHub仓库，选择本项目
+   - 配置基本信息
+   - 在Environment页面添加所有必要的环境变量（可直接导入.env中的配置）
+
+### 保活设置（重要）
+
+Render免费版会在15分钟无活动后休眠，需要设置外部监控保持服务运行：
+
+1. **注册UptimeRobot**
+   - 访问 [uptimerobot.com](https://uptimerobot.com)
+   - 免费账户支持50个监控
+
+2. **添加监控**
+   ```
+   Monitor Type: HTTP(s)
+   Friendly Name: Monitor System
+   URL: https://your-app-name.onrender.com/health
+   Monitoring Interval: 5 minutes
+   ```
+
+3. **验证部署**
+   ```bash
+   # 检查服务状态
+   curl https://your-app-name.onrender.com/health
+
+   # 查看详细状态
+   curl https://your-app-name.onrender.com/status
+   ```
+
+### 免费版限制
+- **运行时间**: 750小时/月（约31天）
+- **内存**: 512MB RAM
+- **休眠机制**: 15分钟无活动后休眠
+- **解决方案**: 使用UptimeRobot保活监控
 
 ## 📚 文档结构
 
@@ -141,4 +177,4 @@ curl http://localhost:3000/status
 ### 外部文档
 - [Binance WebSocket API](https://developers.binance.com/docs/zh-CN/cms/general-info)
 - [Twitter API v2](https://developer.twitter.com/en/docs/twitter-api)
-- [Railway部署指南](https://docs.railway.app/)
+- [Render部署指南](https://render.com/docs)
