@@ -115,6 +115,10 @@ class MultiSourceMonitorApp {
         const port = this.sharedServices.config.config.system.port;
 
         this.httpServer = http.createServer(async (req, res) => {
+            // 记录请求日志
+            console.log(`📡 HTTP请求: ${req.method} ${req.url}`);
+            console.log(`📡 URL匹配检查: req.url === '/health' ? ${req.url === '/health'}`);
+
             // 设置CORS头
             res.setHeader('Access-Control-Allow-Origin', '*');
             res.setHeader('Access-Control-Allow-Methods', 'GET');
@@ -128,14 +132,14 @@ class MultiSourceMonitorApp {
                     const isHealthy = status.orchestrator.status === 'running' &&
                                     status.orchestrator.activeModules > 0;
 
-                    res.writeHead(isHealthy ? 200 : 503);
+                    res.statusCode = isHealthy ? 200 : 503;
                     res.end(JSON.stringify({
                         status: isHealthy ? 'healthy' : 'unhealthy',
                         timestamp: new Date().toISOString(),
                         ...status
                     }, null, 2));
                 } catch (error) {
-                    res.writeHead(500);
+                    res.statusCode = 500;
                     res.end(JSON.stringify({ error: error.message }, null, 2));
                 }
 
@@ -143,17 +147,17 @@ class MultiSourceMonitorApp {
                 // 详细状态端点
                 try {
                     const status = this.orchestrator.getSystemStatus();
-                    res.writeHead(200);
+                    res.statusCode = 200;
                     res.end(JSON.stringify(status, null, 2));
 
                 } catch (error) {
-                    res.writeHead(500);
+                    res.statusCode = 500;
                     res.end(JSON.stringify({ error: error.message }, null, 2));
                 }
 
             } else {
                 // 404 - 未找到
-                res.writeHead(404);
+                res.statusCode = 404;
                 res.end(JSON.stringify({
                     error: 'Not Found',
                     availableEndpoints: ['/health', '/status']

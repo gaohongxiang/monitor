@@ -55,6 +55,7 @@ export class UnifiedNotifierManager {
     initializeFormatters() {
         this.messageFormatters.twitter = new TwitterMessageFormatter();
         this.messageFormatters.binance = new BinanceMessageFormatter();
+        this.messageFormatters.price = new PriceMessageFormatter();
     }
 
     /**
@@ -949,13 +950,38 @@ export class DingTalkNotifier {
  */
 export class TwitterMessageFormatter {
     format(tweet) {
-        const utc8Time = formatTimestamp(tweet.created_at || tweet.createdAt);
-        
-        return `🐦 Twitter推文\n\n` +
-               `👤 用户: @${tweet.username}\n` +
-               `📅 时间: ${utc8Time}\n` +
-               `🔗 链接: ${tweet.url}\n\n` +
-               `📄 内容:\n${tweet.content}`;
+        const beijingTime = this.formatBeijingTime(tweet.created_at || tweet.createdAt);
+        const content = tweet.content || tweet.text || '无文本内容';
+        const username = tweet.username || tweet.author;
+        const displayName = tweet.displayName || tweet.author || username;
+
+        return `📝 新推文：${content}
+
+👤 ${displayName} (@${username})
+🕒 ${beijingTime}
+🔗 ${tweet.url}`;
+    }
+
+    /**
+     * 格式化为北京时间
+     */
+    formatBeijingTime(dateString) {
+        if (!dateString) return '未知时间';
+
+        try {
+            const date = new Date(dateString);
+            return date.toLocaleString('zh-CN', {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                timeZone: 'Asia/Shanghai'
+            }).replace(/\//g, '/').replace(/,/g, '');
+        } catch (error) {
+            return dateString;
+        }
     }
 
     formatBatch(tweets) {
@@ -976,7 +1002,7 @@ export class TwitterMessageFormatter {
 }
 
 /**
- * 币安消息格式化器
+ * 币安公告格式化器
  */
 export class BinanceMessageFormatter {
     constructor() {
@@ -990,15 +1016,24 @@ export class BinanceMessageFormatter {
     }
 
     format(announcement) {
-        const emoji = this.categoryEmojis[announcement.category] || '📢';
-        const priorityIndicator = announcement.priorityScore >= 8 ? '🔥' : '';
-        
-        return `${emoji} ${priorityIndicator}币安公告\n\n` +
-               `📋 标题: ${announcement.title}\n` +
-               `🏷️ 类型: ${announcement.category}\n` +
-               `📅 时间: ${this.formatTime(announcement.publishTime)}\n` +
-               `🔗 链接: ${announcement.url}\n\n` +
-               `📄 内容摘要:\n${this.truncateContent(announcement.content, 200)}`;
+        // 使用你喜欢的格式：📢 公告：标题
+        const title = announcement.title || '未知公告';
+        const originalTitle = announcement.originalTitle || title;
+
+        // 如果有原文且与翻译不同，则显示原文
+        const showOriginal = originalTitle && originalTitle !== title;
+
+        let message = `📢 公告：${title}`;
+
+        if (showOriginal) {
+            message += `\n\n📝 原文:\n${originalTitle}`;
+        }
+
+        message += `\n\n🏷️ 分类: ${announcement.category || '未分类'}`;
+        message += `\n📅 发布时间: ${announcement.publishTime || '未知时间'}`;
+        message += `\n🔗 查看详情: ${announcement.url || 'https://www.binance.com/en/support/announcement'}`;
+
+        return message;
     }
 
     formatBatch(announcements) {
@@ -1027,6 +1062,138 @@ export class BinanceMessageFormatter {
         if (!content) return '';
         if (content.length <= maxLength) return content;
         return content.substring(0, maxLength) + '...';
+    }
+}
+
+/**
+ * 价格消息格式化器
+ */
+export class PriceMessageFormatter {
+    constructor() {
+        this.alertTypes = {
+            'price_alert': '🚨',
+            'daily_report': '📊'
+        };
+    }
+
+    /**
+     * 格式化价格预警消息
+     */
+    formatAlert(alertData) {
+        const { symbol, changePercent, currentPrice, threshold, highPrice, lowPrice, volume } = alertData;
+
+        const direction = changePercent > 0 ? '上涨' : '下跌';
+        const icon = changePercent > 0 ? "🟢" : "🔴";
+        const changeStr = changePercent > 0 ? `+${changePercent.toFixed(2)}` : changePercent.toFixed(2);
+
+        // 简化币种名称显示（BTCUSDT -> BTC）
+        const simplifiedSymbol = symbol.replace('USDT', '').replace('BTC', 'BTC').replace('ETH', 'ETH').replace('BNB', 'BNB');
+
+        // 格式化价格显示
+        const formattedPrice = this.formatPrice(currentPrice);
+
+        let message = `${icon} 价格预警 ${simplifiedSymbol}: $${formattedPrice} (${changeStr}%)
+
+📅 ${new Date().toLocaleDateString('zh-CN')} ${new Date().toLocaleTimeString('zh-CN', {hour12: false})}
+
+⚠️ 触发${threshold}%阈值`;
+
+        // 添加24小时数据（如果有）
+        if (highPrice && lowPrice && volume) {
+            message += `
+
+📊 24小时数据:
+📊 24h最高: $${this.formatPrice(highPrice)}
+📊 24h最低: $${this.formatPrice(lowPrice)}
+💹 24h成交量: ${this.formatVolume(volume)}`;
+        }
+
+        return message;
+    }
+
+    /**
+     * 格式化每日报告
+     */
+    formatDailyReport(reportData) {
+        const { symbols, stats, date } = reportData;
+
+        // 构建第一行价格摘要
+        const priceSummary = symbols.map(symbol => {
+            const stat = stats[symbol];
+            if (stat) {
+                const simplifiedSymbol = symbol.replace('USDT', '');
+                const price = parseFloat(stat.lastPrice);
+                const formattedPrice = this.formatPrice(price);
+                return `${simplifiedSymbol} $${formattedPrice}`;
+            }
+            return null;
+        }).filter(Boolean).join(' | ');
+
+        let message = `📊 每日价格报告：${priceSummary}\n\n`;
+        message += `📅 ${date || new Date().toLocaleDateString('zh-CN')}\n\n`;
+
+        for (const symbol of symbols) {
+            const stat = stats[symbol];
+            if (stat) {
+                const change24h = parseFloat(stat.priceChangePercent);
+                const changeIcon = change24h >= 0 ? '🟢' : '🔴';
+                const changeStr = change24h >= 0 ? `+${change24h.toFixed(2)}` : change24h.toFixed(2);
+
+                const simplifiedSymbol = symbol.replace('USDT', '');
+
+                message += `${changeIcon} ${simplifiedSymbol}\n`;
+                message += `💰 当前价格: $${this.formatPrice(parseFloat(stat.lastPrice))}\n`;
+                message += `📊 24h变化: ${changeStr}%\n`;
+                message += `📈 24h最高: $${this.formatPrice(parseFloat(stat.highPrice))}\n`;
+                message += `📉 24h最低: $${this.formatPrice(parseFloat(stat.lowPrice))}\n`;
+                message += `💹 24h成交量: ${this.formatVolume(parseFloat(stat.volume))}\n`;
+                if (stat.threshold) {
+                    message += `⚠️  预警阈值: ${stat.threshold}%\n`;
+                }
+                message += `\n`;
+            }
+        }
+
+        message += `💡 提示: 各交易对价格变化超过对应阈值时会自动发送预警`;
+        return message;
+    }
+
+    /**
+     * 格式化价格显示（添加千分位分隔符）
+     */
+    formatPrice(price) {
+        const num = parseFloat(price);
+        if (num >= 1) {
+            return num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        } else {
+            return num.toFixed(8);
+        }
+    }
+
+    /**
+     * 格式化成交量
+     */
+    formatVolume(volume) {
+        if (volume >= 1e9) {
+            return (volume / 1e9).toFixed(2) + 'B';
+        } else if (volume >= 1e6) {
+            return (volume / 1e6).toFixed(2) + 'M';
+        } else if (volume >= 1e3) {
+            return (volume / 1e3).toFixed(2) + 'K';
+        } else {
+            return volume.toFixed(2);
+        }
+    }
+
+    formatBatch(alerts) {
+        const header = `📊 价格预警汇总 (${alerts.length}条)\n\n`;
+
+        const items = alerts.map((alert, index) =>
+            `${index + 1}. ${alert.symbol}: ${alert.changePercent > 0 ? '+' : ''}${alert.changePercent.toFixed(2)}%\n` +
+            `   价格: $${this.formatPrice(alert.currentPrice)}`
+        ).join('\n\n');
+
+        return header + items;
     }
 }
 

@@ -727,19 +727,24 @@ export class BinanceAnnouncementMonitor extends BaseMonitor {
             // 构建可点击的链接
             const binanceUrl = 'https://www.binance.com/en/support/announcement';
 
-            // 构建优化的通知消息格式
-            let notificationMessage = `📢 公告：${titleChinese && titleChinese !== title && titleChinese.trim() !== '' ? titleChinese : title}
-
-📝 原文:
-${title}
-
-🏷️ 分类: ${catalogChinese || catalogName || '未分类'}
-📅 发布时间: ${publishTime}
-🔗 查看详情: ${binanceUrl}`;
-
-            // 使用统一通知器发送消息
+            // 使用统一的Binance消息格式化器
             if (this.sharedServices && this.sharedServices.notifier) {
-                await this.sharedServices.notifier.sendToRecipients(notificationMessage, {
+                // 构建标准化的公告数据
+                const announcementData = {
+                    title: titleChinese && titleChinese !== title && titleChinese.trim() !== '' ? titleChinese : title,
+                    originalTitle: title,
+                    category: catalogChinese || catalogName || '未分类',
+                    publishTime: publishTime,
+                    url: binanceUrl,
+                    content: '', // 公告通常没有详细内容
+                    priorityScore: 5 // 默认优先级
+                };
+
+                // 使用统一格式化器格式化消息
+                const formatter = this.sharedServices.notifier.messageFormatters.binance;
+                const message = formatter.format(announcementData);
+
+                await this.sharedServices.notifier.sendToRecipients(message, {
                     recipients: ['dingtalk']
                 });
                 console.log('📤 双语公告通知已发送到钉钉');

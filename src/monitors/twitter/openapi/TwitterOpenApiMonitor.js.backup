@@ -617,15 +617,21 @@ export class TwitterOpenApiMonitor extends BaseMonitor {
 
                 // 使用统一格式化器格式化消息
                 const formatter = this.sharedServices.notifier.messageFormatters.twitter;
-                const message = formatter.format(tweetData);
+            const message = `� 新推文：${formattedTweet.text || '无文本内容'}
 
+👤 ${userInfo.name || username} (@${username})
+� ${beijingTime}
+🔗 ${formattedTweet.url || `https://twitter.com/${username}/status/${formattedTweet.id}`}`;
+
+            // 使用统一通知器发送消息
+            if (this.sharedServices && this.sharedServices.notifier) {
                 await this.sharedServices.notifier.sendToRecipients(message, {
                     recipients: ['dingtalk']
                 });
                 console.log(`📢 已发送 @${username} 的推文通知`);
-                console.log('📄 通知内容预览:', message.substring(0, 100) + '...');
             } else {
                 console.warn('⚠️  通知器未配置，跳过通知发送');
+                console.log('📄 通知内容:', message);
             }
 
         } catch (error) {
@@ -633,7 +639,27 @@ export class TwitterOpenApiMonitor extends BaseMonitor {
         }
     }
 
+    /**
+     * 格式化为北京时间
+     */
+    formatBeijingTime(dateString) {
+        if (!dateString) return '未知时间';
 
+        try {
+            const date = new Date(dateString);
+            return date.toLocaleString('zh-CN', {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                timeZone: 'Asia/Shanghai'
+            }).replace(/\//g, '/').replace(/,/g, '');
+        } catch (error) {
+            return dateString;
+        }
+    }
 
     /**
      * 健康检查

@@ -358,38 +358,31 @@ export class BinancePriceMonitor extends BaseMonitor {
      */
     async sendWebSocketPriceAlert(symbol, changePercent, currentPrice, threshold) {
         try {
-            const direction = changePercent > 0 ? '上涨' : '下跌';
-            const icon = changePercent > 0 ? "🟢" : "🔴";
-            const changeStr = changePercent > 0 ? `+${changePercent.toFixed(2)}` : changePercent.toFixed(2);
-
-            // 简化币种名称显示（BTCUSDT -> BTC）
-            const simplifiedSymbol = symbol.replace('USDT', '').replace('BTC', 'BTC').replace('ETH', 'ETH').replace('BNB', 'BNB');
-
-            // 格式化价格显示（添加千分位分隔符）
-            const formattedPrice = this.formatPrice(currentPrice);
-
-            // 获取额外的价格信息
-            const priceInfo = this.priceData.get(symbol);
-            let additionalInfo = '';
-            if (priceInfo) {
-                additionalInfo = `\n📊 24h最高: $${this.formatPrice(priceInfo.highPrice)}` +
-                               `\n📊 24h最低: $${this.formatPrice(priceInfo.lowPrice)}` +
-                               `\n💹 24h成交量: ${this.formatVolume(priceInfo.volume)}`;
-            }
-
-            const message = `${icon} 价格预警 ${simplifiedSymbol}: $${formattedPrice} (${changeStr}%)
-
-📅 ${new Date().toLocaleDateString('zh-CN')} ${new Date().toLocaleTimeString('zh-CN', {hour12: false})}
-
-⚠️ 触发${threshold}%阈值
-
-📊 24小时数据:${additionalInfo}`;
-
-            // 使用统一通知器发送消息
+            // 使用统一的价格消息格式化器
             if (this.sharedServices && this.sharedServices.notifier) {
+                // 获取额外的价格信息
+                const priceInfo = this.priceData.get(symbol);
+
+                // 构建标准化的价格预警数据
+                const alertData = {
+                    symbol,
+                    changePercent,
+                    currentPrice,
+                    threshold,
+                    highPrice: priceInfo?.highPrice,
+                    lowPrice: priceInfo?.lowPrice,
+                    volume: priceInfo?.volume
+                };
+
+                // 使用统一格式化器格式化消息
+                const formatter = this.sharedServices.notifier.messageFormatters.price;
+                const message = formatter.formatAlert(alertData);
+
                 await this.sharedServices.notifier.sendToRecipients(message, {
                     recipients: ['dingtalk']
                 });
+
+                const direction = changePercent > 0 ? '上涨' : '下跌';
                 console.log(`📢 实时价格预警已发送: ${symbol} ${direction} ${Math.abs(changePercent).toFixed(2)}%`);
             } else {
                 console.warn('⚠️  通知器未配置，跳过通知发送');
@@ -533,39 +526,28 @@ export class BinancePriceMonitor extends BaseMonitor {
      */
     async sendRestApiPriceAlert(symbol, changePercent, currentPrice, threshold, fullData) {
         try {
-            const direction = changePercent > 0 ? '上涨' : '下跌';
-            const icon = changePercent > 0 ? "🟢" : "🔴";
-            const changeStr = changePercent > 0 ? `+${changePercent.toFixed(2)}` : changePercent.toFixed(2);
-
-            // 简化币种名称显示
-            const simplifiedSymbol = symbol.replace('USDT', '').replace('BTC', 'BTC').replace('ETH', 'ETH').replace('BNB', 'BNB');
-
-            // 格式化价格显示
-            const formattedPrice = this.formatPrice(currentPrice);
-
-            // 构建24小时数据信息
-            const highPrice = parseFloat(fullData.highPrice);
-            const lowPrice = parseFloat(fullData.lowPrice);
-            const volume = parseFloat(fullData.volume);
-
-            const additionalInfo = `
-📊 24h最高: $${this.formatPrice(highPrice)}
-📊 24h最低: $${this.formatPrice(lowPrice)}
-💹 24h成交量: ${this.formatVolume(volume)}`;
-
-            const message = `${icon} 价格预警 ${simplifiedSymbol}: $${formattedPrice} (${changeStr}%)
-
-📅 ${new Date().toLocaleDateString('zh-CN')} ${new Date().toLocaleTimeString('zh-CN', {hour12: false})}
-
-⚠️ 触发${threshold}%阈值
-
-📊 24小时数据:${additionalInfo}`;
-
-            // 使用统一通知器发送消息
+            // 使用统一的价格消息格式化器
             if (this.sharedServices && this.sharedServices.notifier) {
+                // 构建标准化的价格预警数据
+                const alertData = {
+                    symbol,
+                    changePercent,
+                    currentPrice,
+                    threshold,
+                    highPrice: parseFloat(fullData.highPrice),
+                    lowPrice: parseFloat(fullData.lowPrice),
+                    volume: parseFloat(fullData.volume)
+                };
+
+                // 使用统一格式化器格式化消息
+                const formatter = this.sharedServices.notifier.messageFormatters.price;
+                const message = formatter.formatAlert(alertData);
+
                 await this.sharedServices.notifier.sendToRecipients(message, {
                     recipients: ['dingtalk']
                 });
+
+                const direction = changePercent > 0 ? '上涨' : '下跌';
                 console.log(`📢 定时价格预警已发送: ${symbol} ${direction} ${Math.abs(changePercent).toFixed(2)}%`);
             } else {
                 console.warn('⚠️  通知器未配置，跳过通知发送');
@@ -642,22 +624,25 @@ export class BinancePriceMonitor extends BaseMonitor {
             // 检查冷却期
             const lastAlert = this.lastAlerts.get(symbol);
             const now = Date.now();
-            
+
             if (lastAlert && (now - lastAlert) < this.cooldownPeriod * 1000) {
                 return; // 还在冷却期内
             }
 
-            // 简化版本：不记录到数据库，只发送通知
-
-            // 发送通知
-            const direction = changePercent > 0 ? '上涨' : '下跌';
-            const message = `🚨 价格预警\n` +
-                          `交易对: ${symbol}\n` +
-                          `${direction}: ${Math.abs(changePercent).toFixed(2)}%\n` +
-                          `价格: ${oldPrice} → ${newPrice}`;
-
-            // 使用统一通知器发送消息
+            // 使用统一的价格消息格式化器
             if (this.sharedServices && this.sharedServices.notifier) {
+                // 构建标准化的价格预警数据
+                const alertData = {
+                    symbol,
+                    changePercent,
+                    currentPrice: newPrice,
+                    threshold: this.getThresholdForSymbol(symbol)
+                };
+
+                // 使用统一格式化器格式化消息
+                const formatter = this.sharedServices.notifier.messageFormatters.price;
+                const message = formatter.formatAlert(alertData);
+
                 await this.sharedServices.notifier.sendToRecipients(message, {
                     recipients: ['dingtalk']
                 });
@@ -668,6 +653,7 @@ export class BinancePriceMonitor extends BaseMonitor {
             // 更新最后预警时间
             this.lastAlerts.set(symbol, now);
 
+            const direction = changePercent > 0 ? '上涨' : '下跌';
             console.log(`🚨 发送价格预警: ${symbol} ${direction} ${Math.abs(changePercent).toFixed(2)}%`);
 
         } catch (error) {
@@ -711,51 +697,31 @@ export class BinancePriceMonitor extends BaseMonitor {
 
             const stats24h = await this.fetch24hStats();
 
-            // 构建第一行价格摘要
-            const priceSummary = this.symbols.map(symbol => {
-                const stats = stats24h[symbol];
-                if (stats) {
-                    const simplifiedSymbol = symbol.replace('USDT', '');
-                    const price = parseFloat(stats.lastPrice);
-                    const formattedPrice = this.formatPrice(price);
-                    return `${simplifiedSymbol} $${formattedPrice}`;
-                }
-                return null;
-            }).filter(Boolean).join(' | ');
-
-            let reportMessage = `📊 每日价格报告：${priceSummary}\n\n`;
-            reportMessage += `📅 ${new Date().toLocaleDateString('zh-CN')}\n\n`;
-
-            for (const symbol of this.symbols) {
-                const stats = stats24h[symbol];
-                if (stats) {
-                    const change24h = parseFloat(stats.priceChangePercent);
-                    const changeIcon = change24h >= 0 ? '🟢' : '🔴';
-                    const changeStr = change24h >= 0 ? `+${change24h.toFixed(2)}` : change24h.toFixed(2);
-
-                    const symbolThreshold = this.getThresholdForSymbol(symbol);
-                    const simplifiedSymbol = symbol.replace('USDT', '');
-
-                    // 格式化所有价格为两位小数
-                    const currentPrice = this.formatPrice(parseFloat(stats.lastPrice));
-                    const highPrice = this.formatPrice(parseFloat(stats.highPrice));
-                    const lowPrice = this.formatPrice(parseFloat(stats.lowPrice));
-
-                    reportMessage += `${changeIcon} ${simplifiedSymbol}\n`;
-                    reportMessage += `💰 当前价格: $${currentPrice}\n`;
-                    reportMessage += `📊 24h变化: ${changeStr}%\n`;
-                    reportMessage += `📈 24h最高: $${highPrice}\n`;
-                    reportMessage += `📉 24h最低: $${lowPrice}\n`;
-                    reportMessage += `💹 24h成交量: ${this.formatVolume(parseFloat(stats.volume))}\n`;
-                    reportMessage += `⚠️  预警阈值: ${symbolThreshold}%\n\n`;
-                }
-            }
-
-            reportMessage += `💡 提示: 各交易对价格变化超过对应阈值时会自动发送预警`;
-
-            // 使用统一通知器发送消息
+            // 使用统一的价格消息格式化器
             if (this.sharedServices && this.sharedServices.notifier) {
-                await this.sharedServices.notifier.sendToRecipients(reportMessage, {
+                // 添加阈值信息到统计数据
+                const enrichedStats = {};
+                for (const symbol of this.symbols) {
+                    if (stats24h[symbol]) {
+                        enrichedStats[symbol] = {
+                            ...stats24h[symbol],
+                            threshold: this.getThresholdForSymbol(symbol)
+                        };
+                    }
+                }
+
+                // 构建标准化的报告数据
+                const reportData = {
+                    symbols: this.symbols,
+                    stats: enrichedStats,
+                    date: new Date().toLocaleDateString('zh-CN')
+                };
+
+                // 使用统一格式化器格式化消息
+                const formatter = this.sharedServices.notifier.messageFormatters.price;
+                const message = formatter.formatDailyReport(reportData);
+
+                await this.sharedServices.notifier.sendToRecipients(message, {
                     recipients: ['dingtalk']
                 });
             } else {
@@ -804,9 +770,13 @@ export class BinancePriceMonitor extends BaseMonitor {
     }
 
     /**
-     * 格式化价格显示（添加千分位分隔符）
+     * 格式化价格显示（委托给统一格式化器）
      */
     formatPrice(price) {
+        if (this.sharedServices?.notifier?.messageFormatters?.price) {
+            return this.sharedServices.notifier.messageFormatters.price.formatPrice(price);
+        }
+        // 降级处理
         const num = parseFloat(price);
         if (num >= 1) {
             return num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -816,9 +786,13 @@ export class BinancePriceMonitor extends BaseMonitor {
     }
 
     /**
-     * 格式化成交量
+     * 格式化成交量（委托给统一格式化器）
      */
     formatVolume(volume) {
+        if (this.sharedServices?.notifier?.messageFormatters?.price) {
+            return this.sharedServices.notifier.messageFormatters.price.formatVolume(volume);
+        }
+        // 降级处理
         if (volume >= 1e9) {
             return (volume / 1e9).toFixed(2) + 'B';
         } else if (volume >= 1e6) {

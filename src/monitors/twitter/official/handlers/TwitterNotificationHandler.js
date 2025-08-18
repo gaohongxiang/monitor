@@ -120,22 +120,38 @@ export class TwitterNotificationHandler {
      * @returns {string} 通知消息
      */
     buildNotificationMessage(username, formattedTweet, userInfo) {
+        // 使用统一的Twitter消息格式化器
+        if (this.sharedServices && this.sharedServices.notifier) {
+            const verifiedIcon = userInfo.verified ? '✅' : '';
+            const tweetText = this.truncateText(formattedTweet.text, 200);
+
+            // 构建标准化的推文数据
+            const tweetData = {
+                content: tweetText,
+                text: tweetText,
+                username: username,
+                displayName: (userInfo.name || username) + (verifiedIcon ? ' ' + verifiedIcon : ''),
+                author: userInfo.name || username,
+                created_at: formattedTweet.createdAt,
+                createdAt: formattedTweet.createdAt,
+                url: formattedTweet.url
+            };
+
+            // 使用统一格式化器格式化消息
+            const formatter = this.sharedServices.notifier.messageFormatters.twitter;
+            return formatter.format(tweetData);
+        }
+
+        // 降级处理（如果没有统一格式化器）
         const verifiedIcon = userInfo.verified ? '✅' : '';
         const tweetText = this.truncateText(formattedTweet.text, 200);
-        
-        return `🐦 Twitter官方API监控到新推文
+        const beijingTime = this.formatBeijingTime(formattedTweet.createdAt);
 
-👤 用户: ${userInfo.name || username} (@${username}) ${verifiedIcon}
-📝 内容: ${tweetText}
-🕒 时间: ${this.formatDate(formattedTweet.createdAt)}
-🔗 链接: ${formattedTweet.url}
+        return `📝 新推文：${tweetText}
 
-📊 互动数据:
-   ❤️ 点赞: ${formattedTweet.public_metrics?.like_count || 0}
-   🔄 转发: ${formattedTweet.public_metrics?.retweet_count || 0}
-   💬 回复: ${formattedTweet.public_metrics?.reply_count || 0}
-
-🔍 来源: Twitter官方API (OAuth2认证)`;
+👤 ${userInfo.name || username} (@${username}) ${verifiedIcon}
+🕒 ${beijingTime}
+🔗 ${formattedTweet.url}`;
     }
 
     /**
@@ -152,14 +168,14 @@ export class TwitterNotificationHandler {
     }
 
     /**
-     * 格式化日期
+     * 格式化为北京时间
      * @private
      * @param {string} dateString - 日期字符串
      * @returns {string} 格式化后的日期
      */
-    formatDate(dateString) {
+    formatBeijingTime(dateString) {
         if (!dateString) return '未知时间';
-        
+
         try {
             const date = new Date(dateString);
             return date.toLocaleString('zh-CN', {
@@ -170,10 +186,20 @@ export class TwitterNotificationHandler {
                 minute: '2-digit',
                 second: '2-digit',
                 timeZone: 'Asia/Shanghai'
-            });
+            }).replace(/\//g, '/').replace(/,/g, '');
         } catch (error) {
             return dateString;
         }
+    }
+
+    /**
+     * 格式化日期 (保持向后兼容)
+     * @private
+     * @param {string} dateString - 日期字符串
+     * @returns {string} 格式化后的日期
+     */
+    formatDate(dateString) {
+        return this.formatBeijingTime(dateString);
     }
 
     /**
