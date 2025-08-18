@@ -141,11 +141,12 @@ class MultiSourceMonitorApp {
                     if (req.method === 'HEAD') {
                         res.end();
                     } else {
-                        // GET请求返回完整的JSON响应
+                        // GET请求返回简洁的JSON响应
                         res.end(JSON.stringify({
                             status: isHealthy ? 'healthy' : 'unhealthy',
                             timestamp: new Date().toISOString(),
-                            ...status
+                            activeModules: status.orchestrator.activeModules,
+                            totalModules: status.orchestrator.enabledModules.length
                         }, null, 2));
                     }
                 } catch (error) {
