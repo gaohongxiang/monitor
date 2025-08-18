@@ -125,21 +125,30 @@ class MultiSourceMonitorApp {
             res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
             res.setHeader('Content-Type', 'application/json');
 
-            if (req.method === 'GET' && req.url === '/health') {
+            if ((req.method === 'GET' || req.method === 'HEAD') && req.url === '/health') {
                 // 健康检查端点
                 try {
+                    console.log('🔍 开始健康检查...');
                     const status = this.orchestrator.getSystemStatus();
+                    console.log('📊 系统状态:', JSON.stringify(status, null, 2));
+
                     const isHealthy = status.orchestrator.status === 'running' &&
                                     status.orchestrator.activeModules > 0;
 
+                    console.log(`💚 健康状态: ${isHealthy ? 'healthy' : 'unhealthy'}`);
+
                     res.statusCode = isHealthy ? 200 : 503;
+                    console.log(`📡 HTTP响应状态码: ${res.statusCode}`);
+
                     res.end(JSON.stringify({
                         status: isHealthy ? 'healthy' : 'unhealthy',
                         timestamp: new Date().toISOString(),
                         ...status
                     }, null, 2));
                 } catch (error) {
+                    console.error('❌ 健康检查异常:', error.message);
                     res.statusCode = 500;
+                    console.log(`📡 HTTP响应状态码: ${res.statusCode}`);
                     res.end(JSON.stringify({ error: error.message }, null, 2));
                 }
 
