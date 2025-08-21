@@ -12,18 +12,18 @@ export class UnifiedNotifierManager {
         this.notificationQueue = [];
         this.isProcessing = false;
         this.databaseManager = null;
-        
+
         // 防刷屏机制
         this.throttleMap = new Map(); // 存储最近发送的消息时间
         this.throttleInterval = config.throttleInterval || 60000; // 1分钟防刷屏间隔
         this.maxRetries = config.maxRetries || 3;
         this.retryDelay = config.retryDelay || 5000;
-        
+
         // 批量发送配置
         this.batchSize = config.batchSize || 5;
         this.batchTimeout = config.batchTimeout || 30000; // 30秒批量超时
         this.pendingBatches = new Map();
-        
+
         // 统计信息
         this.statistics = {
             totalSent: 0,
@@ -31,11 +31,11 @@ export class UnifiedNotifierManager {
             totalThrottled: 0,
             lastResetTime: Date.now()
         };
-        
+
         // 初始化通知器
         this.initializeNotifiers();
         this.initializeFormatters();
-        
+
         // 启动批量处理定时器
         this.startBatchProcessor();
     }
@@ -96,14 +96,14 @@ export class UnifiedNotifierManager {
             // 单条消息处理
             const message = formatter.format(data);
             const messageHash = this.generateMessageHash(message);
-            
+
             // 记录发送时间用于防刷屏
             this.recordMessageSent(source, messageHash);
-            
+
             const notificationId = await this.saveNotificationHistory(source, 'single', message);
-            
+
             const result = await this.sendWithRetry(message, options);
-            
+
             if (notificationId) {
                 await this.updateNotificationStatus(notificationId, result.success ? 'sent' : 'failed', result.error);
             }
@@ -134,7 +134,7 @@ export class UnifiedNotifierManager {
         const message = this.messageFormatters[source].format(data);
         const messageHash = this.generateMessageHash(message);
         const throttleKey = `${source}:${messageHash}`;
-        
+
         const lastSentTime = this.throttleMap.get(throttleKey);
         if (!lastSentTime) {
             return false;
@@ -152,7 +152,7 @@ export class UnifiedNotifierManager {
     recordMessageSent(source, messageHash) {
         const throttleKey = `${source}:${messageHash}`;
         this.throttleMap.set(throttleKey, Date.now());
-        
+
         // 清理过期的防刷屏记录
         this.cleanupThrottleMap();
     }
@@ -163,13 +163,13 @@ export class UnifiedNotifierManager {
     cleanupThrottleMap() {
         const now = Date.now();
         const expiredKeys = [];
-        
+
         for (const [key, timestamp] of this.throttleMap.entries()) {
             if (now - timestamp > this.throttleInterval * 2) {
                 expiredKeys.push(key);
             }
         }
-        
+
         expiredKeys.forEach(key => this.throttleMap.delete(key));
     }
 
@@ -200,7 +200,7 @@ export class UnifiedNotifierManager {
         if (Array.isArray(data)) {
             return data.length <= this.batchSize;
         }
-        
+
         // 对于单条数据，可以根据优先级决定是否批量
         return data.priority !== 'urgent';
     }
@@ -214,7 +214,7 @@ export class UnifiedNotifierManager {
      */
     async addToBatch(source, data, options) {
         const batchKey = `${source}:${options.batchGroup || 'default'}`;
-        
+
         if (!this.pendingBatches.has(batchKey)) {
             this.pendingBatches.set(batchKey, {
                 source,
@@ -226,7 +226,7 @@ export class UnifiedNotifierManager {
         }
 
         const batch = this.pendingBatches.get(batchKey);
-        
+
         // 添加数据到批次
         if (Array.isArray(data)) {
             batch.items.push(...data);
@@ -243,7 +243,7 @@ export class UnifiedNotifierManager {
         if (batch.timeout) {
             clearTimeout(batch.timeout);
         }
-        
+
         batch.timeout = setTimeout(() => {
             this.processBatch(batchKey);
         }, this.batchTimeout);
@@ -266,9 +266,9 @@ export class UnifiedNotifierManager {
             const formatter = this.messageFormatters[batch.source];
             const message = formatter.formatBatch(batch.items);
             const notificationId = await this.saveNotificationHistory(batch.source, 'batch', message);
-            
+
             const result = await this.sendWithRetry(message, batch.options);
-            
+
             if (notificationId) {
                 await this.updateNotificationStatus(notificationId, result.success ? 'sent' : 'failed', result.error);
             }
@@ -292,7 +292,7 @@ export class UnifiedNotifierManager {
         } catch (error) {
             console.error(`批量处理失败: ${batchKey}`, error);
             this.statistics.totalFailed++;
-            
+
             // 清理批次
             this.pendingBatches.delete(batchKey);
             return { success: false, error: error.message };
@@ -332,16 +332,16 @@ export class UnifiedNotifierManager {
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
             try {
                 const result = await this.sendToRecipients(message, options);
-                
+
                 if (result.success) {
                     if (attempt > 1) {
                         console.log(`重试成功: 第${attempt}次尝试`);
                     }
                     return result;
                 }
-                
+
                 lastError = new Error(result.error);
-                
+
             } catch (error) {
                 lastError = error;
             }
@@ -376,7 +376,7 @@ export class UnifiedNotifierManager {
             const formatter = this.messageFormatters[source];
             const message = formatter.formatBatch(batch);
             const notificationId = await this.saveNotificationHistory(source, 'batch', message);
-            
+
             const result = await this.sendToRecipients(message, options);
             results.push(result);
 
@@ -422,7 +422,7 @@ export class UnifiedNotifierManager {
         // 返回综合结果
         const success = results.some(r => r.success);
         const errors = results.filter(r => !r.success).map(r => r.error);
-        
+
         return {
             success,
             results,
@@ -438,7 +438,7 @@ export class UnifiedNotifierManager {
      */
     async queueNotification(source, data, options = {}) {
         this.notificationQueue.push({ source, data, options, timestamp: Date.now() });
-        
+
         if (!this.isProcessing) {
             this.processNotificationQueue();
         }
@@ -458,7 +458,7 @@ export class UnifiedNotifierManager {
             while (this.notificationQueue.length > 0) {
                 const notification = this.notificationQueue.shift();
                 await this.sendNotification(notification.source, notification.data, notification.options);
-                
+
                 // 队列处理间隔
                 await this.sleep(500);
             }
@@ -523,14 +523,14 @@ export class UnifiedNotifierManager {
      */
     getStatistics() {
         const uptime = Date.now() - this.statistics.lastResetTime;
-        
+
         return {
             ...this.statistics,
             uptime: uptime,
             pendingBatches: this.pendingBatches.size,
             queueLength: this.notificationQueue.length,
             throttleMapSize: this.throttleMap.size,
-            successRate: this.statistics.totalSent > 0 
+            successRate: this.statistics.totalSent > 0
                 ? (this.statistics.totalSent / (this.statistics.totalSent + this.statistics.totalFailed) * 100).toFixed(2) + '%'
                 : '0%'
         };
@@ -688,7 +688,7 @@ export class UnifiedNotifierManager {
     resumeNotifications() {
         this.isPaused = false;
         console.log('通知发送已恢复');
-        
+
         // 处理暂停期间积累的队列
         if (this.notificationQueue.length > 0) {
             this.processNotificationQueue();
@@ -704,10 +704,10 @@ export class UnifiedNotifierManager {
      */
     async sendSystemNotification(type, message, options = {}) {
         const systemMessage = `🔔 系统通知 [${type.toUpperCase()}]\n\n${message}\n\n时间: ${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}`;
-        
+
         const notificationId = await this.saveNotificationHistory('system', type, systemMessage);
         const result = await this.sendWithRetry(systemMessage, { ...options, priority: 'high' });
-        
+
         if (notificationId) {
             await this.updateNotificationStatus(notificationId, result.success ? 'sent' : 'failed', result.error);
         }
@@ -722,16 +722,16 @@ export class UnifiedNotifierManager {
      */
     async sendHealthCheckNotification(healthStatus) {
         const { healthy, unhealthyModules, totalModules } = healthStatus;
-        
+
         if (healthy) {
             return { success: true, skipped: true, reason: '系统健康，无需通知' };
         }
 
         const message = `⚠️ 系统健康检查警告\n\n` +
-                       `总模块数: ${totalModules}\n` +
-                       `异常模块: ${unhealthyModules.length}\n` +
-                       `异常列表: ${unhealthyModules.join(', ')}\n\n` +
-                       `请及时检查系统状态！`;
+            `总模块数: ${totalModules}\n` +
+            `异常模块: ${unhealthyModules.length}\n` +
+            `异常列表: ${unhealthyModules.join(', ')}\n\n` +
+            `请及时检查系统状态！`;
 
         return await this.sendSystemNotification('health_check', message, { priority: 'urgent' });
     }
@@ -744,10 +744,10 @@ export class UnifiedNotifierManager {
      */
     async sendErrorNotification(error, context = '') {
         const message = `❌ 系统错误报告\n\n` +
-                       `错误信息: ${error.message}\n` +
-                       `发生位置: ${context}\n` +
-                       `错误堆栈: ${error.stack ? error.stack.split('\n').slice(0, 3).join('\n') : '无'}\n\n` +
-                       `请及时处理！`;
+            `错误信息: ${error.message}\n` +
+            `发生位置: ${context}\n` +
+            `错误堆栈: ${error.stack ? error.stack.split('\n').slice(0, 3).join('\n') : '无'}\n\n` +
+            `请及时处理！`;
 
         return await this.sendSystemNotification('error', message, { priority: 'urgent' });
     }
@@ -987,12 +987,12 @@ ${tweet.url}`;
 
     formatBatch(tweets) {
         const header = `📊 Twitter推文汇总 (${tweets.length}条)\n\n`;
-        
-        const items = tweets.map((tweet, index) => 
+
+        const items = tweets.map((tweet, index) =>
             `${index + 1}. @${tweet.username}: ${this.truncateText(tweet.content, 50)}\n` +
             `   时间: ${formatTimestamp(tweet.created_at || tweet.createdAt)}`
         ).join('\n\n');
-        
+
         return header + items;
     }
 
@@ -1039,12 +1039,12 @@ export class BinanceMessageFormatter {
 
     formatBatch(announcements) {
         const header = `📊 币安公告汇总 (${announcements.length}条)\n\n`;
-        
-        const items = announcements.map((ann, index) => 
+
+        const items = announcements.map((ann, index) =>
             `${index + 1}. ${ann.title}\n` +
             `   类型: ${ann.category} | 时间: ${this.formatTime(ann.publishTime)}`
         ).join('\n\n');
-        
+
         return header + items;
     }
 
@@ -1095,7 +1095,7 @@ export class PriceMessageFormatter {
 
         let message = `${icon} 价格预警 ${simplifiedSymbol}: $${formattedPrice} (${changeStr}%)
 
-📅 ${new Date().toLocaleDateString('zh-CN')} ${new Date().toLocaleTimeString('zh-CN', {hour12: false})}
+📅 ${getCurrentTimeUTC8('datetime')}
 
 ⚠️ 触发${threshold}%阈值`;
 
@@ -1131,7 +1131,7 @@ export class PriceMessageFormatter {
         }).filter(Boolean).join(' | ');
 
         let message = `📊 每日价格报告：${priceSummary}\n\n`;
-        message += `📅 ${date || new Date().toLocaleDateString('zh-CN')}\n\n`;
+        message += `📅 ${date || getCurrentTimeUTC8('date')}\n\n`;
 
         for (const symbol of symbols) {
             const stat = stats[symbol];

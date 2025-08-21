@@ -6,6 +6,7 @@
 import { BaseMonitor } from '../base/BaseMonitor.js';
 import WebSocket from 'ws';
 import { SocksProxyAgent } from 'socks-proxy-agent';
+import { getCurrentTimeUTC8 } from '../../utils/timeUtils.js';
 
 export class BinancePriceMonitor extends BaseMonitor {
     constructor(sharedServices, config) {
@@ -714,7 +715,7 @@ export class BinancePriceMonitor extends BaseMonitor {
                 const reportData = {
                     symbols: this.symbols,
                     stats: enrichedStats,
-                    date: new Date().toLocaleDateString('zh-CN')
+                    date: getCurrentTimeUTC8('date')
                 };
 
                 // 使用统一格式化器格式化消息
