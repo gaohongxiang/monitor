@@ -388,6 +388,19 @@ export class BinanceAnnouncementMonitor extends BaseMonitor {
 
             // 订阅主题
             this.subscribeToTopics();
+
+            // 如果是重连（不是首次连接），异步重新加载已处理的公告缓存
+            // 使用 setImmediate 避免阻塞 onOpen 事件处理
+            if (this.stats.reconnections > 0) {
+                setImmediate(async () => {
+                    try {
+                        console.log('🔄 检测到重连，重新加载已处理公告缓存...');
+                        await this.loadRecentProcessedAnnouncements();
+                    } catch (error) {
+                        console.error('❌ 重连时加载缓存失败:', error.message);
+                    }
+                });
+            }
         });
 
         this.ws.on('message', (data) => {
@@ -437,6 +450,20 @@ export class BinanceAnnouncementMonitor extends BaseMonitor {
                 // 如果连接持续时间太短（小于30秒），可能有问题
                 if (duration < 30000) {
                     console.warn('⚠️  连接持续时间过短，可能存在配置问题');
+
+                    // 如果连续多次短连接，增加重连延迟
+                    const recentShortConnections = this.stats.connectionDurations
+                        .slice(-3) // 最近3次连接
+                        .filter(d => d < 30000).length;
+
+                    if (recentShortConnections >= 2) {
+                        console.warn('⚠️  检测到连续短连接，可能是代理或网络问题，增加重连延迟');
+                        // 临时增加重连延迟
+                        this.reconnectDelay = Math.min(this.reconnectDelay * 2, 30000);
+                    }
+                } else {
+                    // 连接稳定，重置重连延迟
+                    this.reconnectDelay = 5000;
                 }
             }
 
@@ -582,6 +609,7 @@ export class BinanceAnnouncementMonitor extends BaseMonitor {
 
             // 生成消息唯一标识符用于去重
             const messageId = this.generateMessageId(message);
+            console.log(`🔍 生成消息ID: ${messageId}`);
 
             // 先检查内存缓存（快速检查）
             if (this.processedAnnouncements.has(messageId)) {
@@ -649,12 +677,33 @@ export class BinanceAnnouncementMonitor extends BaseMonitor {
     generateMessageId(message) {
         // 尝试从消息中提取唯一标识符
         let identifier = '';
-        
+
         if (message.type === 'DATA' && message.data) {
             try {
                 const announcementData = JSON.parse(message.data);
-                // 使用标题+发布时间作为唯一标识
-                identifier = `${announcementData.title || 'unknown'}_${announcementData.publishDate || Date.now()}`;
+
+                // 优先使用公告ID（如果存在）
+                if (announcementData.id) {
+                    identifier = `binance_${announcementData.id}`;
+                } else if (announcementData.title) {
+                    // 使用标题的哈希值作为稳定标识符
+                    // 避免使用时间戳，因为重连时可能导致同一公告生成不同ID
+                    const titleHash = crypto.createHash('md5')
+                        .update(announcementData.title.trim())
+                        .digest('hex')
+                        .substring(0, 16); // 取前16位
+
+                    // 如果有发布时间，也加入标识符增强唯一性
+                    const publishDate = announcementData.publishDate || announcementData.releaseDate;
+                    if (publishDate) {
+                        identifier = `binance_${titleHash}_${publishDate}`;
+                    } else {
+                        identifier = `binance_${titleHash}`;
+                    }
+                } else {
+                    // 如果没有标题，使用消息内容的哈希
+                    identifier = crypto.createHash('md5').update(JSON.stringify(announcementData)).digest('hex');
+                }
             } catch (error) {
                 // 如果解析失败，使用消息内容的哈希
                 identifier = crypto.createHash('md5').update(JSON.stringify(message)).digest('hex');
@@ -663,7 +712,7 @@ export class BinanceAnnouncementMonitor extends BaseMonitor {
             // 使用消息内容的哈希作为标识符
             identifier = crypto.createHash('md5').update(JSON.stringify(message)).digest('hex');
         }
-        
+
         return identifier;
     }
 
