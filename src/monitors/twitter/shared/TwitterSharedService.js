@@ -45,9 +45,9 @@ export class TwitterSharedService {
      */
     async loadLastTweetIdsFromDatabase(monitoredUsers) {
         console.log('🔄 从数据库恢复最后推文ID...');
-        
+
         const lastTweetIds = new Map();
-        
+
         for (const username of monitoredUsers) {
             try {
                 const record = await this.recordsManager.getLastTweetId(username);
@@ -61,7 +61,7 @@ export class TwitterSharedService {
                 console.error(`   ❌ 恢复 @${username} 记录失败:`, error.message);
             }
         }
-        
+
         return lastTweetIds;
     }
 
@@ -115,11 +115,11 @@ export class TwitterSharedService {
 
             // 发送通知
             await notificationSender.sendTweetNotification(username, formattedTweet, userInfo);
-            
+
             // 更新记录（内存和数据库）
             lastTweetIds.set(username, tweet.id);
             await this.updateLastTweetIdInDatabase(username, tweet.id);
-            
+
             console.log(`   ✅ @${username} 新推文处理完成: ${tweet.id}`);
             return true;
 
@@ -272,8 +272,8 @@ export class TwitterSharedService {
             // 使用统一的用户ID获取方法
             const userId = await this.getUserId(client, username);
 
-            // 获取更多推文用于过滤（OpenAPI限制）
-            const tweetsResponse = await client.getTweetApi().getUserTweets({
+            // 使用 getUserTweetsAndReplies 替代 getUserTweets 以获取推文和回复
+            const tweetsResponse = await client.getTweetApi().getUserTweetsAndReplies({
                 userId: userId,
                 count: Math.min(40, Number(options.count) * 2) // 获取更多推文用于过滤
             });
@@ -283,30 +283,77 @@ export class TwitterSharedService {
             // 过滤推广内容
             const realTweets = tweets.filter(tweetWrapper => !tweetWrapper.promotedMetadata);
 
-            // 提取推文数据并转换为统一格式（兼容formatTweet方法）
-            let formattedTweets = realTweets.map(tweetWrapper => {
-                const tweet = tweetWrapper.tweet;
-                if (!tweet) return null;
+            // 提取推文和回复数据并转换为统一格式
+            let allContent = [];
 
-                return {
-                    id: tweet.restId,                                    // 推文ID
-                    text: tweet.legacy?.fullText || tweet.legacy?.text || '', // 推文文本
-                    full_text: tweet.legacy?.fullText || tweet.legacy?.text || '', // 备用字段
-                    created_at: tweet.legacy?.createdAt,                 // 创建时间
-                    author_id: tweet.legacy?.userId,                     // 作者ID
-                    // 保留原始数据
+            // 处理每个推文及其回复线程
+            realTweets.forEach(tweetWrapper => {
+                const tweet = tweetWrapper.tweet;
+                const replies = tweetWrapper.replies || [];
+
+                if (!tweet) return;
+
+                // 1. 处理主推文
+                const mainTweet = {
+                    id: tweet.restId,
+                    text: tweet.legacy?.fullText || tweet.legacy?.text || '',
+                    full_text: tweet.legacy?.fullText || tweet.legacy?.text || '',
+                    created_at: tweet.legacy?.createdAt,
+                    author_id: tweet.legacy?.userId,
+                    in_reply_to_status_id: tweet.legacy?.inReplyToStatusIdStr,
+                    in_reply_to_user_id: tweet.legacy?.inReplyToUserId,
+                    in_reply_to_screen_name: tweet.legacy?.inReplyToScreenName,
                     raw: tweet
                 };
-            }).filter(tweet => tweet !== null);
 
-            // 如果有sinceId，过滤出更新的推文
+                // 检查主推文是否符合条件（原创推文或自回复）
+                const isMainTweetValid = !mainTweet.in_reply_to_status_id ||
+                    mainTweet.in_reply_to_screen_name === username;
+
+                if (isMainTweetValid) {
+                    allContent.push(mainTweet);
+                }
+
+                // 2. 处理回复线程中的自回复
+                replies.forEach(replyWrapper => {
+                    const replyTweet = replyWrapper.tweet;
+                    const replyUser = replyWrapper.user;
+
+                    if (!replyTweet || !replyUser) return;
+
+                    // 只处理用户自己的回复
+                    if (replyUser.legacy?.screenName === username) {
+                        const selfReply = {
+                            id: replyTweet.restId,
+                            text: replyTweet.legacy?.fullText || replyTweet.legacy?.text || '',
+                            full_text: replyTweet.legacy?.fullText || replyTweet.legacy?.text || '',
+                            created_at: replyTweet.legacy?.createdAt,
+                            author_id: replyTweet.legacy?.userId,
+                            in_reply_to_status_id: replyTweet.legacy?.inReplyToStatusIdStr || tweet.restId,
+                            in_reply_to_user_id: replyTweet.legacy?.inReplyToUserId,
+                            in_reply_to_screen_name: replyTweet.legacy?.inReplyToScreenName || username,
+                            raw: replyTweet
+                        };
+
+                        allContent.push(selfReply);
+                    }
+                });
+            });
+
+            // 如果有sinceId，过滤出更新的内容
             if (sinceId) {
-                formattedTweets = formattedTweets.filter(tweet =>
-                    BigInt(tweet.id) > BigInt(sinceId)
+                allContent = allContent.filter(item =>
+                    BigInt(item.id) > BigInt(sinceId)
                 );
             }
 
-            return formattedTweets.slice(0, Number(options.count));
+            // 按ID排序（时间顺序）
+            allContent.sort((a, b) => {
+                const diff = BigInt(a.id) - BigInt(b.id);
+                return diff > 0n ? 1 : diff < 0n ? -1 : 0;
+            });
+
+            return allContent.slice(0, Number(options.count));
 
         } catch (error) {
             console.error(`OpenAPI获取推文失败:`, error.message);

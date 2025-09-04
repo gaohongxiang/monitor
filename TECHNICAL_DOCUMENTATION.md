@@ -295,6 +295,207 @@ CREATE TABLE price_history (
 );
 ```
 
+## Twitter数据处理流程详解
+
+### getUserTweetsAndReplies API 数据流分析
+
+Twitter OpenAPI的`getUserTweetsAndReplies`接口返回的数据结构比较复杂，包含推文和回复线程的组合。理解这个数据流对于正确处理Twitter内容至关重要。
+
+#### 1. API 返回的原始数据结构
+
+```javascript
+// getUserTweetsAndReplies API 返回结构
+{
+  data: {
+    data: [
+      // 推文包装器 1
+      {
+        tweet: {
+          restId: "1963490180205105558",
+          legacy: {
+            fullText: "#币安钱包 网页版返佣页面功能指南🧭...",
+            createdAt: "Thu Sep 04 06:31:53 +0000 2025",
+            inReplyToStatusIdStr: null,        // null = 原创推文
+            inReplyToScreenName: null
+          }
+        },
+        replies: [
+          // 这个推文下的回复线程
+          {
+            tweet: {
+              restId: "1963495000000000000",
+              legacy: {
+                fullText: "补充信息：活动截止到...",
+                inReplyToStatusIdStr: "1963490180205105558",  // 回复上面的推文
+                inReplyToScreenName: "binancezh"
+              }
+            },
+            user: {
+              legacy: {
+                screenName: "binancezh",  // 自己回复自己 = 自回复
+                userId: "1451036242431262720"
+              }
+            }
+          },
+          {
+            tweet: {
+              restId: "1963496000000000000",
+              legacy: {
+                fullText: "@binancezh 什么时候开始？",
+                inReplyToStatusIdStr: "1963490180205105558",
+                inReplyToScreenName: "binancezh"
+              }
+            },
+            user: {
+              legacy: {
+                screenName: "other_user",  // 别人的回复
+                userId: "9999999999999999999"
+              }
+            }
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+#### 2. getOpenApiTweets 数据处理流程
+
+```mermaid
+flowchart TD
+    A[getUserTweetsAndReplies API返回] --> B[过滤推广内容]
+    B --> C[遍历推文包装器]
+    C --> D[处理主推文]
+    C --> E[处理回复线程]
+    
+    D --> F{判断推文类型}
+    F -->|inReplyToStatusIdStr == null| G[原创推文 ✅ 收集]
+    F -->|inReplyToScreenName == 监控用户| H[自回复推文 ✅ 收集]
+    F -->|回复他人| I[跳过 ❌]
+    
+    E --> J{判断回复者}
+    J -->|screenName == 监控用户| K[自回复 ✅ 收集]
+    J -->|其他用户| L[跳过 ❌]
+    
+    G --> M[时间过滤]
+    H --> M
+    K --> M
+    M --> N[排序和限制数量]
+    N --> O[返回最终结果]
+```
+
+#### 3. 处理步骤详解
+
+**步骤1: 过滤推广内容**
+```javascript
+const realTweets = tweets.filter(tweetWrapper => !tweetWrapper.promotedMetadata);
+```
+
+**步骤2: 遍历推文包装器**
+```javascript
+realTweets.forEach(tweetWrapper => {
+    const tweet = tweetWrapper.tweet;
+    const replies = tweetWrapper.replies || [];
+    
+    // 处理主推文和回复线程
+});
+```
+
+**步骤3: 处理主推文**
+```javascript
+// 判断推文类型
+if (!tweet.legacy.inReplyToStatusIdStr) {
+    // 原创推文 ✅ 收集
+    allContent.push(formatTweetContent(tweet, 'original'));
+} else if (tweet.legacy.inReplyToScreenName === monitorUser) {
+    // 自回复推文 ✅ 收集
+    allContent.push(formatTweetContent(tweet, 'self_reply'));
+}
+// 回复他人的推文 ❌ 跳过
+```
+
+**步骤4: 处理回复线程**
+```javascript
+replies.forEach(reply => {
+    if (reply.user?.legacy?.screenName === monitorUser) {
+        // 自回复 ✅ 收集
+        allContent.push(formatTweetContent(reply.tweet, 'self_reply_in_thread'));
+    }
+    // 他人回复 ❌ 跳过
+});
+```
+
+**步骤5: 时间过滤**
+```javascript
+if (sinceId) {
+    allContent = allContent.filter(item => 
+        BigInt(item.id) > BigInt(sinceId)
+    );
+}
+```
+
+**步骤6: 排序和限制**
+```javascript
+allContent.sort((a, b) => BigInt(b.id) - BigInt(a.id)); // 按ID降序
+return allContent.slice(0, Number(options.count));
+```
+
+#### 4. 实际处理示例
+
+**输入数据:**
+```javascript
+// 推文包装器1
+{
+  tweet: "原创推文A (ID: 123)",
+  replies: [
+    "binancezh的自回复 (ID: 124)",
+    "other_user的回复 (ID: 125)"
+  ]
+}
+
+// 推文包装器2  
+{
+  tweet: "自回复推文B (ID: 126, 回复推文ID: 120)",
+  replies: [
+    "binancezh的自回复 (ID: 127)",
+    "another_user的回复 (ID: 128)"
+  ]
+}
+```
+
+**处理结果:**
+```javascript
+// 步骤3 - 处理主推文
+✅ 推文A (ID: 123) → 原创推文，收集
+✅ 推文B (ID: 126) → 自回复推文，收集
+
+// 步骤4 - 处理回复线程  
+✅ 自回复 (ID: 124) → binancezh的回复，收集
+❌ 回复 (ID: 125) → other_user的回复，跳过
+✅ 自回复 (ID: 127) → binancezh的回复，收集
+❌ 回复 (ID: 128) → another_user的回复，跳过
+```
+
+**最终输出:**
+```javascript
+[
+  { id: "127", text: "binancezh的自回复", type: "self_reply_in_thread" },
+  { id: "126", text: "自回复推文B", type: "self_reply" },
+  { id: "124", text: "binancezh的自回复", type: "self_reply_in_thread" },
+  { id: "123", text: "原创推文A", type: "original" }
+]
+```
+
+#### 5. 关键设计原则
+
+1. **完整性**: 收集用户的所有原创内容和自回复
+2. **准确性**: 排除回复他人的内容，避免噪音
+3. **时效性**: 支持增量更新，只获取新内容
+4. **一致性**: 统一的数据格式和处理逻辑
+
+这种设计确保能够完整捕获币安等官方账号的主推文和后续的自回复补充信息，同时过滤掉无关的用户回复。
+
 ## 核心工作流程
 
 ### 系统启动流程
