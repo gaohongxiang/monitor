@@ -209,9 +209,13 @@ export class TwitterSharedService {
             return true;
         }
 
-        // 过滤回复（如果需要）
+        // 过滤回复他人的推文，但保留自回复
         if (tweet.in_reply_to_status_id || tweet.text?.startsWith('@')) {
-            return true;
+            // 如果是回复自己的推文，则保留
+            if (tweet.in_reply_to_screen_name === userInfo?.username) {
+                return false; // 不过滤自回复
+            }
+            return true; // 过滤回复他人的推文
         }
 
         return false;
@@ -393,7 +397,8 @@ export class TwitterSharedService {
 
                 // 过滤不需要的推文
                 if (this.shouldFilterTweet(tweet, userInfo)) {
-                    console.log(`   🚫 过滤推文: ${tweet.id} (转推或回复)`);
+                    const reason = tweet.retweeted_status || tweet.text?.startsWith('RT @') ? '转推' : '回复他人';
+                    console.log(`   🚫 过滤推文: ${tweet.id} (${reason})`);
                     continue;
                 }
 
