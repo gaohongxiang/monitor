@@ -146,22 +146,18 @@ Railway不再提供免费版服务，推荐使用Render进行部署。
 
 ### 保活设置（重要）
 
-Render免费版会在15分钟无活动后休眠，需要设置外部监控保持服务运行：
+Render 免费版会在 15 分钟无活动后休眠，推荐用 GitHub Actions 定时保活：
 
-1. **注册UptimeRobot**
-   - 访问 [uptimerobot.com](https://uptimerobot.com)
-   - 免费账户支持50个监控
+1. **配置仓库变量/密钥**（此项目选变量就行）
+   - 进入 GitHub 仓库 → Settings → Secrets and variables → Actions
+   - 新增 `Variables`：
+     - 名称：`PING_URLS`
+     - 值：`https://your-app-name.onrender.com/health`
 
-2. **添加监控**
-   ```
-   Monitor Type: HTTP(s)
-   Friendly Name: Monitor System
-   URL: https://your-app-name.onrender.com/health
-   Monitoring Interval: 5 minutes
-   ```
-
-3. **验证部署**
+2. **验证部署**
    ```bash
+   # 手动触发一次（Actions → keep-alive → Run workflow）后，按 .github/workflows/keep-alive.yml 里的计划自动执行
+   
    # 检查服务状态
    curl https://your-app-name.onrender.com/health
 
@@ -173,7 +169,7 @@ Render免费版会在15分钟无活动后休眠，需要设置外部监控保持
 - **运行时间**: 750小时/月（约31天）
 - **内存**: 512MB RAM
 - **休眠机制**: 15分钟无活动后休眠
-- **解决方案**: 使用UptimeRobot保活监控
+- **解决方案**: 使用 GitHub Actions 定时保活（或 Render Cron Job）
 
 ## 📚 文档结构
 

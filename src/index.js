@@ -153,7 +153,7 @@ class MultiSourceMonitorApp {
 
                     res.statusCode = isHealthy ? 200 : 503;
 
-                    // 设置响应头，让UptimeRobot知道服务状态
+                    // 设置响应头，便于外部保活/监控（GitHub Actions/Render Cron/等）识别服务状态
                     res.setHeader('X-Health-Status', isHealthy ? 'healthy' : 'unhealthy');
                     res.setHeader('X-Active-Modules', status.orchestrator.activeModules.toString());
 

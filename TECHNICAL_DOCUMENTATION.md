@@ -1102,12 +1102,11 @@ GET /status
 
 ## 部署架构
 
-### Render部署
 - **自动容器化** - 支持Render的自动容器化
 - **环境变量管理** - 通过Render控制台管理环境变量
 - **数据库集成** - 使用Supabase PostgreSQL数据库服务
 - **健康检查** - 内置HTTP健康检查端点
-- **保活监控** - 使用UptimeRobot防止服务休眠
+- **保活监控** - 使用 GitHub Actions 定时请求 `/health`，或 Render Cron Job
 
 ### 部署配置
 ```json
